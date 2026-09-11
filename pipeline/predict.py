@@ -14,6 +14,10 @@ FEATURE_COLS = [
     "pts_avg_last5",
     "reb_avg_last5",
     "ast_avg_last5",
+    "stl_avg_last5",
+    "blk_avg_last5",
+    "tov_avg_last5",
+    "pf_avg_last5",
     "rest_days",
 ]
 

@@ -5,7 +5,7 @@ PROCESSED_DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
 
 
 def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
-    #One row per game -> one row per team per game, organized like the raw shape
+    # One row per game -> one row per team per game, organized like the raw shape
     home = games[
         [
             "GAME_ID",
@@ -15,6 +15,10 @@ def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
             "home_pts",
             "home_reb",
             "home_ast",
+            "home_stl",
+            "home_blk",
+            "home_tov",
+            "home_pf",
             "home_win",
         ]
     ].copy()
@@ -25,6 +29,10 @@ def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
             "home_pts": "pts",
             "home_reb": "reb",
             "home_ast": "ast",
+            "home_stl": "stl",
+            "home_blk": "blk",
+            "home_tov": "tov",
+            "home_pf": "pf",
             "home_win": "win",
         }
     )
@@ -39,6 +47,10 @@ def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
             "away_pts",
             "away_reb",
             "away_ast",
+            "away_stl",
+            "away_blk",
+            "away_tov",
+            "away_pf",
             "home_win",
         ]
     ].copy()
@@ -49,6 +61,10 @@ def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
             "away_pts": "pts",
             "away_reb": "reb",
             "away_ast": "ast",
+            "away_stl": "stl",
+            "away_blk": "blk",
+            "away_tov": "tov",
+            "away_pf": "pf",
         }
     )
     away["win"] = 1 - away["home_win"]
@@ -64,7 +80,7 @@ def add_rolling_form(long_df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     long_df = long_df.copy()
     grouped = long_df.groupby("team")
 
-    for col in ["win", "pts", "reb", "ast"]:
+    for col in ["win", "pts", "reb", "ast", "stl", "blk", "tov", "pf"]:
         long_df[f"{col}_avg_last{window}"] = (
             grouped[col].shift(1).rolling(window).mean().reset_index(level=0, drop=True)
         )
@@ -82,7 +98,7 @@ def add_rest_days(long_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_feature_matrix(games: pd.DataFrame, window: int = 5) -> pd.DataFrame:
-    #Combines window and rest days to return one row per game, 2 teams per row
+    # Combines window and rest days to return one row per game, 2 teams per row
     long_df = to_long_format(games)
     long_df = add_rolling_form(long_df, window=window)
     long_df = add_rest_days(long_df)
@@ -92,6 +108,10 @@ def build_feature_matrix(games: pd.DataFrame, window: int = 5) -> pd.DataFrame:
         f"pts_avg_last{window}",
         f"reb_avg_last{window}",
         f"ast_avg_last{window}",
+        f"stl_avg_last{window}",
+        f"blk_avg_last{window}",
+        f"pf_avg_last{window}",
+        f"tov_avg_last{window}",
         "rest_days",
     ]
 

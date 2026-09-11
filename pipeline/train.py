@@ -12,11 +12,19 @@ FEATURE_COL = [
     "home_pts_avg_last5",
     "home_reb_avg_last5",
     "home_ast_avg_last5",
+    "home_stl_avg_last5",
+    "home_blk_avg_last5",
+    "home_tov_avg_last5",
+    "home_pf_avg_last5",
     "home_rest_days",
     "away_win_avg_last5",
     "away_pts_avg_last5",
     "away_reb_avg_last5",
     "away_ast_avg_last5",
+    "away_stl_avg_last5",
+    "away_blk_avg_last5",
+    "away_tov_avg_last5",
+    "away_pf_avg_last5",
     "away_rest_days",
 ]
 
@@ -56,7 +64,8 @@ if __name__ == "__main__":
     model = LogisticRegression(max_iter=1000)
     model.fit(X_train, y_train)
     model_proba = model.predict_proba(X_test)[:, 1]
-
+    coefs = pd.Series(model.coef_[0], index=FEATURE_COL)
+    print(coefs.sort_values(key=abs, ascending=False))
     print("\n Logistic")
     evaluate(y_test, model_proba, "Logistic regression")
 
