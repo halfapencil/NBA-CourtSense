@@ -5,7 +5,7 @@ PROCESSED_DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
 
 
 def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
-
+    #One row per game -> one row per team per game, organized like the raw shape
     home = games[
         [
             "GAME_ID",
@@ -60,6 +60,7 @@ def to_long_format(games: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_rolling_form(long_df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
+    # Add rolling averages
     long_df = long_df.copy()
     grouped = long_df.groupby("team")
 
@@ -72,6 +73,7 @@ def add_rolling_form(long_df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
 
 
 def add_rest_days(long_df: pd.DataFrame) -> pd.DataFrame:
+    # Adds number of rest days a team had
     long_df = long_df.copy()
     long_df["prev_game_date"] = long_df.groupby("team")["GAME_DATE"].shift(1)
     long_df["rest_days"] = (long_df["GAME_DATE"] - long_df["prev_game_date"]).dt.days
@@ -80,6 +82,7 @@ def add_rest_days(long_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_feature_matrix(games: pd.DataFrame, window: int = 5) -> pd.DataFrame:
+    #Combines window and rest days to return one row per game, 2 teams per row
     long_df = to_long_format(games)
     long_df = add_rolling_form(long_df, window=window)
     long_df = add_rest_days(long_df)

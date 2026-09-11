@@ -15,6 +15,7 @@ def add_home_away(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def reshape_to_game_level(df: pd.DataFrame) -> pd.DataFrame:
+    #Organizes data so each row of the dataframe represents a single game
     home = df[df["IS_HOME"]].copy()
     away = df[~df["IS_HOME"]].copy()
 
@@ -37,6 +38,7 @@ def reshape_to_game_level(df: pd.DataFrame) -> pd.DataFrame:
     return merged
 
 def validate(df: pd.DataFrame) -> None:
+    #Ensures sanity of values
     assert df["GAME_ID"].is_unique, "Duplicate GAME_ID found"
     assert df["home_pts"].notna().all(), "Missing home_pts value"
     assert df["away_pts"].notna().all(), "Missing away_pts value"
