@@ -3,9 +3,21 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 import pandas as pd
+from .constants import BASE_STAT_COLS
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 DATABASE_URL = os.environ["DATABASE_URL"]
+
+rename_map = {
+    "GAME_ID": "game_id",
+    "GAME_DATE": "game_date",
+    "home_team": "home_team",
+    "away_team": "away_team",
+    "home_win": "home_win",
+}
+for c in BASE_STAT_COLS:
+    rename_map[f"home_{c}"] = f"home_{c}"
+    rename_map[f"away_{c}"] = f"away_{c}"
 
 
 def get_engine():
@@ -13,33 +25,25 @@ def get_engine():
 
 
 def write_games(games_df: pd.DataFrame):
-
     engine = get_engine()
-    rename_map = {
-        "GAME_ID": "game_id",
-        "GAME_DATE": "game_date",
-        "home_team": "home_team",
-        "away_team": "away_team",
-        "home_pts": "home_pts",
-        "away_pts": "away_pts",
-        "home_reb": "home_reb",
-        "away_reb": "away_reb",
-        "home_ast": "home_ast",
-        "away_ast": "away_ast",
-        "home_win": "home_win",
-    }
 
     df = games_df.rename(columns=rename_map)[list(rename_map.values())]
     df.to_sql("games_staging", engine, if_exists="replace", index=False)
 
+    cols = list(rename_map.values())
+    col_list = ", ".join(cols)
+    update_cols = [c for c in cols if c != "game_id"]
+    set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+
     with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT INTO games SELECT * FROM games_staging 
-            ON CONFLICT (game_id) DO NOTHING
-    """))
+        conn.execute(text(f"""
+            INSERT INTO games ({col_list})
+            SELECT {col_list} FROM games_staging
+            ON CONFLICT (game_id) DO UPDATE SET {set_clause}
+        """))
         conn.execute(text("DROP TABLE games_staging"))
 
-    print(f"Wrote {len(df)} into database")
+    print(f"Wrote {len(df)} games to database")
 
 
 def write_predictions(predictions_df: pd.DataFrame):

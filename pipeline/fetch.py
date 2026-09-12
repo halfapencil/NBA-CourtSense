@@ -32,7 +32,7 @@ def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
     team_lookup = {t["id"]: t["abbreviation"] for t in teams.get_teams()}
     result = pd.DataFrame(
         {
-            "GAME_DATE": pd.to_datetime(games_df["GAME_DATE_EST"]),
+            "game_date": pd.to_datetime(games_df["GAME_DATE_EST"]),
             "home_team": games_df["HOME_TEAM_ID"].map(team_lookup),
             "away_team": games_df["VISITOR_TEAM_ID"].map(team_lookup),
         }

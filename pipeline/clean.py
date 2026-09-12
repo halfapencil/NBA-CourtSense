@@ -1,5 +1,6 @@
 from pathlib import Path
 import pandas as pd
+from .constants import RAW_STAT_MAP
 
 RAW_DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
 PROCESSED_DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
@@ -19,62 +20,27 @@ def add_home_away(df: pd.DataFrame) -> pd.DataFrame:
 
 def reshape_to_game_level(df: pd.DataFrame) -> pd.DataFrame:
     # Organizes data so each row of the dataframe represents a single game
-    home = df[df["IS_HOME"]].copy()
-    away = df[~df["IS_HOME"]].copy()
+    home_rename = {
+        "GAME_ID": "game_id",
+        "GAME_DATE": "game_date",
+        "TEAM_ABBREVIATION": "home_team",
+        "WL": "home_wl",
+    }
+    home_rename.update({raw: f"home_{base}" for raw, base in RAW_STAT_MAP.items()})
 
-    home = home.rename(
-        columns={
-            "TEAM_ABBREVIATION": "home_team",
-            "PTS": "home_pts",
-            "REB": "home_reb",
-            "AST": "home_ast",
-            "WL": "home_wl",
-            "STL": "home_stl",
-            "BLK": "home_blk",
-            "TOV": "home_tov",
-            "PF": "home_pf",
-        }
-    )
-    away = away.rename(
-        columns={
-            "TEAM_ABBREVIATION": "away_team",
-            "PTS": "away_pts",
-            "REB": "away_reb",
-            "AST": "away_ast",
-            "WL": "away_wl",
-            "STL": "away_stl",
-            "BLK": "away_blk",
-            "TOV": "away_tov",
-            "PF": "away_pf",
-        }
-    )
+    away_rename = {"GAME_ID": "game_id", "TEAM_ABBREVIATION": "away_team"}
+    away_rename.update({raw: f"away_{base}" for raw, base in RAW_STAT_MAP.items()})
 
-    keep_home = [
-        "GAME_ID",
-        "GAME_DATE",
-        "home_team",
-        "home_pts",
-        "home_reb",
-        "home_ast",
-        "home_wl",
-        "home_stl",
-        "home_blk",
-        "home_tov",
-        "home_pf",
+    home = df[df["IS_HOME"]].rename(columns=home_rename)
+    away = df[~df["IS_HOME"]].rename(columns=away_rename)
+    
+    keep_home = ["game_id", "game_date", "home_team", "home_wl"] + [
+        f"home_{c}" for c in RAW_STAT_MAP.values()
     ]
-    keep_away = [
-        "GAME_ID",
-        "away_team",
-        "away_pts",
-        "away_reb",
-        "away_ast",
-        "away_stl",
-        "away_blk",
-        "away_tov",
-        "away_pf",
-    ]
+    keep_away = ["game_id", "away_team"] + [f"away_{c}" for c in RAW_STAT_MAP.values()]
 
-    merged = home[keep_home].merge(away[keep_away], on="GAME_ID", how="inner")
+
+    merged = home[keep_home].merge(away[keep_away], on="game_id", how="inner")
     merged["home_win"] = (merged["home_wl"] == "W").astype(int)
     merged = merged.drop(columns=["home_wl"])
 
@@ -83,12 +49,12 @@ def reshape_to_game_level(df: pd.DataFrame) -> pd.DataFrame:
 
 def validate(df: pd.DataFrame) -> None:
     # Ensures sanity of values
-    assert df["GAME_ID"].is_unique, "Duplicate GAME_ID found"
+    assert df["game_id"].is_unique, "Duplicate game_id found"
     assert df["home_pts"].notna().all(), "Missing home_pts value"
     assert df["away_pts"].notna().all(), "Missing away_pts value"
     assert df["home_win"].isin([0, 1]).all(), "home_win should only be 0 or 1"
 
-    print(f"Validated {len(df)} games, {df["GAME_ID"].nunique()} unique game ID")
+    print(f"Validated {len(df)} games, {df["game_id"].nunique()} unique game ID")
 
 
 def clean_pipeline(filename: str = "historical_games.csv") -> pd.DataFrame:
