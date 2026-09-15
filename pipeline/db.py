@@ -66,3 +66,18 @@ def write_predictions(predictions_df: pd.DataFrame):
 def read_games() -> pd.DataFrame:
     engine = get_engine()
     return pd.read_sql("SELECT * FROM games", engine, parse_dates=["game_date"])
+
+
+def update_prediction_outcome():
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("""
+        UPDATE predictions p
+        SET actual_home_win = g.home_win
+        FROM games g
+        WHERE p.home_team = g.home_team
+        AND p.away_team = g.away_team
+        AND p.game_date = g.game_date
+        AND p.actual_home_win IS NULL
+    """))
+    print("Updated predictions for completed games")

@@ -27,6 +27,7 @@ def fetch_multiple_seasons(seasons: list[str]) -> pd.DataFrame:
 
 
 def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
+    # Retrieves games for game_date
     scoreboard = scoreboardv2.ScoreboardV2(game_date=game_date)
     games_df = scoreboard.get_data_frames()[0]
     team_lookup = {t["id"]: t["abbreviation"] for t in teams.get_teams()}
