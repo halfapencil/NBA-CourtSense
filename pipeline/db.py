@@ -51,13 +51,16 @@ def write_predictions(predictions_df: pd.DataFrame):
     df = predictions_df.rename(columns={"GAME_DATE": "game_date"})
     df.to_sql("predictions_staging", engine, if_exists="replace", index=False)
 
+    cols = df.columns.tolist()
+    col_list = ", ".join(cols)
+    update_cols = [c for c in cols if c not in ("game_date", "home_team", "away_team")]
+    set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
     with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT INTO predictions (game_date, home_team, away_team, home_win_prob)
-            SELECT game_date, home_team, away_team, home_win_prob FROM predictions_staging
-            ON CONFLICT (game_date, home_team, away_team) DO UPDATE
-            SET home_win_prob = EXCLUDED.home_win_prob, predicted_at = NOW()
-        """))
+        conn.execute(text(f"""
+            INSERT INTO PREDICTIONS ({col_list})
+            SELECT {col_list} FROM predictions_staging
+            ON CONFLICT (game_date, home_team, away_team) DO UPDATE SET {set_clause}
+                """))
         conn.execute(text("DROP TABLE predictions_staging"))
 
     print(f"Wrote {len(df)} predictions to database")
