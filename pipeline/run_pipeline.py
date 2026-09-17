@@ -5,17 +5,33 @@ from .fetch import fetch_upcoming_games
 from .clean import add_home_away, reshape_to_game_level
 from .predict import get_latest_team_form, build_upcoming_features, predict_games
 from .db import write_predictions, read_games, write_games, update_prediction_outcome
+import time
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
+
+
+def fetch_with_retry(fetch_fn, max_retries=3, delay=10):
+    for attempt in range(max_retries):
+        try:
+            return fetch_fn
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(10)
+            else:
+                raise
 
 
 def update_completed_games(season: str = "2025-26"):
     from nba_api.stats.endpoints import leaguegamelog
     import pandas as pd
 
-    game_log = leaguegamelog.LeagueGameLog(
-        season=season, season_type_all_star="Regular Season"
+    game_log = fetch_with_retry(
+        lambda: leaguegamelog.LeagueGameLog(
+            season=season, season_type_all_star="Regular Season"
+        )
     )
+
     raw = game_log.get_data_frames()[0]
     raw["GAME_DATE"] = pd.to_datetime(raw["GAME_DATE"])
     raw = add_home_away(raw)
