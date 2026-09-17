@@ -13,7 +13,7 @@ MODELS_DIR = Path(__file__).parent.parent / "models"
 def fetch_with_retry(fetch_fn, max_retries=3, delay=10):
     for attempt in range(max_retries):
         try:
-            return fetch_fn
+            return fetch_fn()
         except Exception as e:
             print(f"Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
