@@ -52,6 +52,7 @@ def write_predictions(predictions_df: pd.DataFrame):
     df.to_sql("predictions_staging", engine, if_exists="replace", index=False)
 
     cols = df.columns.tolist()
+    print(cols)
     col_list = ", ".join(cols)
     update_cols = [c for c in cols if c not in ("game_date", "home_team", "away_team")]
     set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)

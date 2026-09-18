@@ -52,7 +52,6 @@ def run(date: str | None = None):
 
     team_form = get_latest_team_form(games, as_of_date=target_date)
     upcoming_games = fetch_upcoming_games(target_date)
-    print(team_form[["team", "last_game_date"]].to_string())
 
     if upcoming_games.empty:
         print(f"No games for {target_date}, No predictions available")

@@ -5,13 +5,14 @@ from datetime import datetime
 from .features import to_long_format, add_rolling_form
 from .fetch import fetch_upcoming_games
 from .constants import WIN_MODEL_STATS
+from scipy.stats import norm
 
 PROCESSED_DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
 MODELS_DIR = Path(__file__).parent.parent / "models"
 
 WINDOW = 5
 FEATURE_COLS = [f"{c}_avg_last{WINDOW}" for c in ["win"] + WIN_MODEL_STATS] + [
-    "rest_days"
+    "rest_days",
 ]
 
 
@@ -54,6 +55,10 @@ def build_upcoming_features(
     df["away_rest_days"] = (df["game_date"] - df["away_last_game_date"]).dt.days
     return df
 
+def implied_spread(home_win_prob: float, std_dev: float = 12.0) -> float:
+    z = norm.ppf(home_win_prob)
+    return round(z * std_dev, 1)
+
 
 def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
     features_cols = [f"home_{c}" for c in FEATURE_COLS] + [
@@ -70,6 +75,9 @@ def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
     X = upcoming_features[features_cols]
     upcoming_features = upcoming_features.copy()
     upcoming_features["home_win_prob"] = model.predict_proba(X)[:, 1]
+    upcoming_features["home_spread"] = upcoming_features["home_win_prob"].apply(
+        implied_spread
+    )
     return upcoming_features[
         [
             "game_date",
@@ -82,6 +90,7 @@ def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
             "away_win_avg_last5",
             "away_pts_avg_last5",
             "away_rest_days",
+            "home_spread",
         ]
     ]
 
