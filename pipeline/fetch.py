@@ -1,4 +1,4 @@
-from nba_api.stats.endpoints import leaguegamelog, scoreboardv2
+from nba_api.stats.endpoints import leaguegamelog, scoreboardv3
 from nba_api.stats.static import teams
 from pathlib import Path
 import pandas as pd
@@ -28,17 +28,26 @@ def fetch_multiple_seasons(seasons: list[str]) -> pd.DataFrame:
 
 def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
     # Retrieves games for game_date
-    scoreboard = scoreboardv2.ScoreboardV2(game_date=game_date)
-    games_df = scoreboard.get_data_frames()[0]
-    team_lookup = {t["id"]: t["abbreviation"] for t in teams.get_teams()}
-    result = pd.DataFrame(
+    try:
+        sb = scoreboardv3.ScoreboardV3(game_date=game_date)
+        raw = sb.get_dict()
+        games = raw["scoreboard"]["games"]
+    except Exception as e:
+        print(f"Could not fetch schedule for {game_date}: {e}")
+        return pd.DataFrame(columns=["game_date", "home_team", "away_team"])
+
+    if not games:
+        return pd.DataFrame(columns=["game_date", "home_team", "away_team"])
+
+    rows = [
         {
-            "game_date": pd.to_datetime(games_df["GAME_DATE_EST"]),
-            "home_team": games_df["HOME_TEAM_ID"].map(team_lookup),
-            "away_team": games_df["VISITOR_TEAM_ID"].map(team_lookup),
+            "game_date": pd.to_datetime(game_date),
+            "home_team": game["homeTeam"]["teamTricode"],
+            "away_team": game["awayTeam"]["teamTricode"],
         }
-    )
-    return result
+        for game in games
+    ]
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
