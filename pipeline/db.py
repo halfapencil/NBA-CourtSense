@@ -46,6 +46,21 @@ def write_games(games_df: pd.DataFrame):
     print(f"Wrote {len(df)} games to database")
 
 
+def update_spread_outcome():
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE predictions p
+            SET covered_spread = (g.home_pts - g.away_pts) > p.home_spread
+            FROM games g
+            WHERE p.home_team = g.home_team
+              AND p.away_team = g.away_team
+              AND p.game_date = g.game_date
+              AND p.covered_spread IS NULL
+        """))
+    print("Updated spread outcomes")
+
+
 def write_predictions(predictions_df: pd.DataFrame):
     engine = get_engine()
     df = predictions_df.rename(columns={"GAME_DATE": "game_date"})

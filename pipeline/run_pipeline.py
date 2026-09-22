@@ -4,7 +4,13 @@ from pathlib import Path
 from .fetch import fetch_upcoming_games
 from .clean import add_home_away, reshape_to_game_level
 from .predict import get_latest_team_form, build_upcoming_features, predict_games
-from .db import write_predictions, read_games, write_games, update_prediction_outcome
+from .db import (
+    write_predictions,
+    read_games,
+    write_games,
+    update_prediction_outcome,
+    update_spread_outcome,
+)
 import time
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
@@ -59,6 +65,7 @@ def run(date: str | None = None):
     upcoming_features = build_upcoming_features(upcoming_games, team_form)
     predictions = predict_games(upcoming_features, model)
     write_predictions(predictions)
+    update_spread_outcome()
     print(f"Wrote {len(predictions)} to database for {target_date}")
 
 
