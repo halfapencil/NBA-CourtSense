@@ -8,13 +8,18 @@ export type CompletedGames = {
     actual_home_win: number
 }
 
-export async function getRecentGamesByDate(days = 5) {
+export async function getRecentGamesByDate(startDate: string, days = 5) {
+    const start = new Date(startDate)
+    const end = new Date(start)
+
+    end.setDate(end.getDate() - days + 1)
     const { data, error } = await supabase
         .from('predictions')
         .select('game_date, home_team, away_team, home_win_prob, actual_home_win')
         .not('actual_home_win', 'is', null)
+        .lte('game_date', start.toISOString().split('T')[0])
+        .gte('game_date', end.toISOString().split('T')[0])
         .order('game_date', { ascending: false })
-        .limit(100)
 
     if (error) {
         console.error("Error getting completed games", error)

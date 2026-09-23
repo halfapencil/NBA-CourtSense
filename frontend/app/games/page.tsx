@@ -1,13 +1,20 @@
 import Link from "next/link"
 import { CompletedGames, getRecentGamesByDate } from "@/lib/queries"
+import { DateNav } from "@/components/DateNav"
 
-export default async function GamesHistory() {
-    const columns = await getRecentGamesByDate(5)
+export default async function GamesHistory({
+    searchParams,
+}: {
+    searchParams: Promise<{ start?: string }>
+}) {
+    const params = await searchParams
+    const startDate = params.start ?? getDefaultStartDate()
+    const columns = await getRecentGamesByDate(startDate, 5)
 
     return (
         <div>
-            <h1 className="text-2xl font-semibold">Games Predictions</h1>
-
+            <h1 className="text-2xl font-semibold">Games Results</h1>
+            <DateNav currentStart={startDate} />
             {columns.length === 0 ? (
                 <p className="text-[#8B93A6]"> No games completed.</p>
             ) : (
@@ -20,6 +27,11 @@ export default async function GamesHistory() {
         </div>
     )
 
+}
+function getDefaultStartDate(): string {
+    const d = new Date("2025-01-10")
+    d.setDate(d.getDate() - 4)
+    return d.toISOString().split('T')[0]
 }
 
 function GameCell({ game }: { game: any }) {
