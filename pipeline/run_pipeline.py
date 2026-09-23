@@ -9,7 +9,6 @@ from .db import (
     read_games,
     write_games,
     update_prediction_outcome,
-    update_spread_outcome,
 )
 import time
 
@@ -55,7 +54,7 @@ def run(date: str | None = None):
     print(f"Loaded {len(games)} historical games from database")
 
     model = joblib.load(MODELS_DIR / "model.pkl")
-
+    spread_model = joblib.load(MODELS_DIR / "spread_model.pkl")
     team_form = get_latest_team_form(games, as_of_date=target_date)
     upcoming_games = fetch_upcoming_games(target_date)
 
@@ -63,9 +62,11 @@ def run(date: str | None = None):
         print(f"No games for {target_date}, No predictions available")
         return
     upcoming_features = build_upcoming_features(upcoming_games, team_form)
-    predictions = predict_games(upcoming_features, model)
+    predictions = predict_games(upcoming_features, model, spread_model)
+    if predictions.empty:
+        print(f"No predictions for {target_date}")
+        return
     write_predictions(predictions)
-    update_spread_outcome()
     print(f"Wrote {len(predictions)} to database for {target_date}")
 
 

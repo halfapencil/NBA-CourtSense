@@ -55,12 +55,13 @@ def build_upcoming_features(
     df["away_rest_days"] = (df["game_date"] - df["away_last_game_date"]).dt.days
     return df
 
+
 def implied_spread(home_win_prob: float, std_dev: float = 12.0) -> float:
     z = norm.ppf(home_win_prob)
     return round(z * std_dev, 1)
 
 
-def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
+def predict_games(upcoming_features: pd.DataFrame, model, spread_model) -> pd.DataFrame:
     features_cols = [f"home_{c}" for c in FEATURE_COLS] + [
         f"away_{c}" for c in FEATURE_COLS
     ]
@@ -75,9 +76,10 @@ def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
     X = upcoming_features[features_cols]
     upcoming_features = upcoming_features.copy()
     upcoming_features["home_win_prob"] = model.predict_proba(X)[:, 1]
-    upcoming_features["home_spread"] = upcoming_features["home_win_prob"].apply(
+    upcoming_features["implied_spread"] = upcoming_features["home_win_prob"].apply(
         implied_spread
     )
+    upcoming_features["model_spread"] = spread_model.predict(X).round(1)
     return upcoming_features[
         [
             "game_date",
@@ -90,7 +92,8 @@ def predict_games(upcoming_features: pd.DataFrame, model) -> pd.DataFrame:
             "away_win_avg_last5",
             "away_pts_avg_last5",
             "away_rest_days",
-            "home_spread",
+            "implied_spread",
+            "model_spread",
         ]
     ]
 

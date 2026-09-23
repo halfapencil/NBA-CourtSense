@@ -7,6 +7,7 @@ from .constants import BASE_STAT_COLS
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 DATABASE_URL = os.environ["DATABASE_URL"]
+_engine = None
 
 rename_map = {
     "GAME_ID": "game_id",
@@ -21,7 +22,10 @@ for c in BASE_STAT_COLS:
 
 
 def get_engine():
-    return create_engine(DATABASE_URL)
+    global _engine
+    if _engine is None:
+        _engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=0)
+    return _engine
 
 
 def write_games(games_df: pd.DataFrame):
@@ -46,21 +50,6 @@ def write_games(games_df: pd.DataFrame):
     print(f"Wrote {len(df)} games to database")
 
 
-def update_spread_outcome():
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE predictions p
-            SET covered_spread = (g.home_pts - g.away_pts) > p.home_spread
-            FROM games g
-            WHERE p.home_team = g.home_team
-              AND p.away_team = g.away_team
-              AND p.game_date = g.game_date
-              AND p.covered_spread IS NULL
-        """))
-    print("Updated spread outcomes")
-
-
 def write_predictions(predictions_df: pd.DataFrame):
     engine = get_engine()
     df = predictions_df.rename(columns={"GAME_DATE": "game_date"})
@@ -73,7 +62,7 @@ def write_predictions(predictions_df: pd.DataFrame):
     set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
     with engine.begin() as conn:
         conn.execute(text(f"""
-            INSERT INTO PREDICTIONS ({col_list})
+            INSERT INTO predictions ({col_list})
             SELECT {col_list} FROM predictions_staging
             ON CONFLICT (game_date, home_team, away_team) DO UPDATE SET {set_clause}
                 """))
