@@ -35,3 +35,14 @@ export async function getRecentGamesByDate(startDate: string, days = 5) {
         .sort((a, b) => (a[0] < b[0] ? 1 : -1))
         .slice(0, days)
 }
+
+export async function getGame({ date, away, home }: { date: string; away: string; home: string }) {
+    const { data } = await supabase
+        .from('games')
+        .select('*')
+        .eq('game_date', date)
+        .eq('home_team', home)
+        .eq('away_team', away)
+        .maybeSingle()
+    return data
+}

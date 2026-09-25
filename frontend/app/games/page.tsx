@@ -49,7 +49,7 @@ function GameCell({ game }: { game: any }) {
                     {winner} <span className="text-[#8B93A6]"> wins vs </span> {loser}
                 </span>
             </div>
-            <span className={`text-sm font-medium${wasCorrect ? 'text-[#5FA777]' : 'text-[#C4554D]'}`}>
+            <span className={`text-sm font-medium ${wasCorrect ? 'text-[#5FA777]' : 'text-[#C4554D]'}`}>
                 {wasCorrect ? '✓ Correct' : '✗ Missed'}
 
             </span>
