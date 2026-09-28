@@ -1,10 +1,60 @@
-from nba_api.stats.endpoints import leaguegamelog, scoreboardv3
+from nba_api.stats.endpoints import leaguegamelog, scoreboardv3, boxscoretraditionalv3
 from nba_api.stats.static import teams
 from pathlib import Path
 import pandas as pd
 import time
 
 RAW_DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
+
+PLAYER_BOX_SCORE_RENAME = {
+    "gameId": "game_id",
+    "personId": "player_id",
+    "teamTricode": "team",
+    "position": "position",
+    "comment": "comment",
+    "points": "pts",
+    "reboundsOffensive": "oreb",
+    "reboundsDefensive": "dreb",
+    "reboundsTotal": "reb",
+    "assists": "ast",
+    "steals": "stl",
+    "blocks": "blk",
+    "turnovers": "tov",
+    "foulsPersonal": "pf",
+    "fieldGoalsMade": "fgm",
+    "fieldGoalsAttempted": "fga",
+    "threePointersMade": "fg3m",
+    "threePointersAttempted": "fg3a",
+    "freeThrowsMade": "ftm",
+    "freeThrowsAttempted": "fta",
+    "plusMinusPoints": "plus_minus",
+}
+
+
+def fetch_player_box_score(game_id: str) -> pd.DataFrame:
+    box = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id)
+    df = box.player_stats.get_data_frame()
+    if df.empty:
+        return pd.DataFrame(
+            columns=list(PLAYER_BOX_SCORE_RENAME.values()) + ["min", "player_name"]
+        )
+
+    df["player_name"] = df["firstName"] + " " + df["familyName"]
+
+    def parse_minutes(m):
+        if not m or pd.isna(m):
+            return None
+        parts = str(m).split(":")
+        if len(parts) != 2:
+            return None
+        mins, secs = parts
+        return round(int(mins) + int(secs) / 60, 1)
+
+    df["min"] = df["minutes"].apply(parse_minutes)
+    df = df.rename(columns=PLAYER_BOX_SCORE_RENAME)
+    keep_cols = list(PLAYER_BOX_SCORE_RENAME.values()) + ["min", "player_name"]
+
+    return df[keep_cols]
 
 
 def fetch_season(season: str) -> pd.DataFrame:
@@ -51,7 +101,7 @@ def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    seasons = ["2021-22", "2022-23", "2023-24", "2024-25"]
+    seasons = ["2021-22", "2022-23", "2023-24", "2024-25", "2025-26"]
     games_df = fetch_multiple_seasons(seasons)
     games_df.to_csv(RAW_DATA_DIR / "nba_games_raw.csv", index=False)
     print(games_df.columns)

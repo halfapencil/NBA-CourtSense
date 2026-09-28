@@ -10,7 +10,6 @@ export default async function GamesHistory({
     const params = await searchParams
     const startDate = params.start ?? getDefaultStartDate()
     const columns = await getRecentGamesByDate(startDate, 5)
-
     return (
         <div>
             <h1 className="text-2xl font-semibold">Games Results</h1>

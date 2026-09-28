@@ -25,6 +25,7 @@ export async function getRecentGamesByDate(startDate: string, days = 5) {
         console.error("Error getting completed games", error)
         return []
     }
+    console.log(data)
     const byDate = new Map<string, CompletedGames[]>()
 
     for (const game of data ?? []) {
@@ -44,5 +45,19 @@ export async function getGame({ date, away, home }: { date: string; away: string
         .eq('home_team', home)
         .eq('away_team', away)
         .maybeSingle()
+    return data
+}
+
+export async function getPlayerBoxScore(gameId: string) {
+    const { data, error } = await supabase
+        .from('player_games')
+        .select("*")
+        .eq('game_id', gameId)
+        .order('pts', { ascending: false })
+
+    if (error) {
+        console.error(error)
+        return []
+    }
     return data
 }

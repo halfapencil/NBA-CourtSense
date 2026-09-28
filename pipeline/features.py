@@ -74,7 +74,9 @@ def add_rest_days(long_df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     games = pd.read_csv(
-        PROCESSED_DATA_DIR / "games_clean.csv", parse_dates=["game_date"]
+        PROCESSED_DATA_DIR / "games_clean.csv",
+        parse_dates=["game_date"],
+        dtype={"game_id": str},
     )
     feature_df = build_feature_matrix(games)
     feature_df.to_csv(PROCESSED_DATA_DIR / "features.csv", index=False)

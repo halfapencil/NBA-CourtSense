@@ -7,7 +7,7 @@ PROCESSED_DATA_DIR = Path(__file__).parent.parent / "data" / "processed"
 
 
 def load_raw(filename: str = "historical_games.csv") -> pd.DataFrame:
-    df = pd.read_csv(RAW_DATA_DIR / filename)
+    df = pd.read_csv(RAW_DATA_DIR / filename, dtype={"GAME_ID": str})
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
     return df
 
@@ -33,12 +33,11 @@ def reshape_to_game_level(df: pd.DataFrame) -> pd.DataFrame:
 
     home = df[df["IS_HOME"]].rename(columns=home_rename)
     away = df[~df["IS_HOME"]].rename(columns=away_rename)
-    
+
     keep_home = ["game_id", "game_date", "home_team", "home_wl"] + [
         f"home_{c}" for c in RAW_STAT_MAP.values()
     ]
     keep_away = ["game_id", "away_team"] + [f"away_{c}" for c in RAW_STAT_MAP.values()]
-
 
     merged = home[keep_home].merge(away[keep_away], on="game_id", how="inner")
     merged["home_win"] = (merged["home_wl"] == "W").astype(int)

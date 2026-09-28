@@ -48,9 +48,9 @@ def run(date: str | None = None):
     target_date = date or datetime.today().strftime("%Y-%m-%d")
 
     print(f"Pipeline for {target_date}")
+    games = read_games()    
     update_completed_games()
     update_prediction_outcome()
-    games = read_games()
     print(f"Loaded {len(games)} historical games from database")
 
     model = joblib.load(MODELS_DIR / "model.pkl")

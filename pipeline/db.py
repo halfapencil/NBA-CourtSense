@@ -8,6 +8,32 @@ from .constants import BASE_STAT_COLS
 load_dotenv(Path(__file__).parent.parent / ".env")
 DATABASE_URL = os.environ["DATABASE_URL"]
 _engine = None
+PLAYER_GAME_COLS = [
+    "game_id",
+    "player_id",
+    "player_name",
+    "team",
+    "position",
+    "comment",
+    "min",
+    "pts",
+    "oreb",
+    "dreb",
+    "reb",
+    "ast",
+    "stl",
+    "blk",
+    "tov",
+    "pf",
+    "fgm",
+    "fga",
+    "fg3m",
+    "fg3a",
+    "ftm",
+    "fta",
+    "plus_minus",
+]
+
 
 rename_map = {
     "GAME_ID": "game_id",
@@ -26,6 +52,27 @@ def get_engine():
     if _engine is None:
         _engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=0)
     return _engine
+
+
+def write_player_box_score(player_games_df: pd.DataFrame):
+    engine = get_engine()
+
+    df = player_games_df[PLAYER_GAME_COLS]
+    df.to_sql("player_games_staging", engine, if_exists="replace", index=False)
+
+    col_list = ", ".join(PLAYER_GAME_COLS)
+    update_cols = [c for c in PLAYER_GAME_COLS if c not in ("game_id", "player_id")]
+    set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+        INSERT INTO player_games ({col_list})
+        SELECT {col_list} FROM player_games_staging
+        ON CONFLICT(game_id, player_id) DO UPDATE SET {set_clause}
+    """))
+        conn.execute(text("DROP TABLE player_games_staging"))
+
+    print(f"Wrote {len(df)} player box score rows to database")
 
 
 def write_games(games_df: pd.DataFrame):
