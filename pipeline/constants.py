@@ -1,6 +1,8 @@
 RAW_STAT_MAP = {
     "PTS": "pts",
     "REB": "reb",
+    "OREB": "oreb",
+    "DREB": "dreb",
     "AST": "ast",
     "STL": "stl",
     "BLK": "blk",

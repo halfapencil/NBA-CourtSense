@@ -8,6 +8,7 @@ export type CompletedGames = {
     actual_home_win: number
 }
 
+// Given a start date, returns all games from that date and the 5 following days
 export async function getRecentGamesByDate(startDate: string, days = 5) {
     const start = new Date(startDate)
     const end = new Date(start)
@@ -36,6 +37,7 @@ export async function getRecentGamesByDate(startDate: string, days = 5) {
         .slice(0, days)
 }
 
+// Given date, home team and away team, returns the game row from games table
 export async function getGame({ date, away, home }: { date: string; away: string; home: string }) {
     const { data } = await supabase
         .from('games')
@@ -47,6 +49,7 @@ export async function getGame({ date, away, home }: { date: string; away: string
     return data
 }
 
+// Given gameId, returns the box score
 export async function getPlayerBoxScore(gameId: string) {
     const { data, error } = await supabase
         .from('player_games')
@@ -60,4 +63,3 @@ export async function getPlayerBoxScore(gameId: string) {
     }
     return data
 }
-
