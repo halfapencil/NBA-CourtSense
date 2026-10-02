@@ -1,0 +1,108 @@
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
+export const STAT_COLS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta']
+
+export function seasonForDate(date: Date): string {
+    const year = date.getUTCFullYear()
+    const month = date.getUTCMonth()
+    const startYear = month >= 10 ? year : year - 1
+
+    return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`
+}
+
+export function seasonDateRange(season: string): { start: string; end: string } {
+    const [startYear] = season.split('-')
+    const start = `${startYear}-10-01`
+    const end = `${Number(startYear) + 1}-09-30`
+
+    return { start, end }
+}
+
+type TeamGameRow = {
+    game_id: string
+    game_date: string
+    home_team: string
+    away_team: string
+    home_win: number
+    [key: string]: any
+}
+
+export async function getTeamSeasonStats(
+    team: string,
+    season: string,
+    asOfDate?: string
+) {
+    const { start, end } = seasonDateRange(season)
+    const effectiveEnd = asOfDate && asOfDate < end ? asOfDate : end
+    const { data, error } = await supabase
+        .from('games')
+        .select("*")
+        .or(`home_team.eq.${team},away_team.eq.${team}`)
+        .gte('game_date', start)
+        .lte('game_date', effectiveEnd)
+        .order('game_date', { ascending: true })
+    if (error) {
+        console.error(error)
+        return null
+    }
+    if (!data || data.length === 0) return null
+    return aggregateTeamStats(team, data as TeamGameRow[])
+}
+
+function aggregateTeamStats(team: string, games: TeamGameRow[]) {
+    let wins = 0
+    let losses = 0
+
+    const totals: Record<string, number> = {}
+    const oppTotals: Record<string, number> = {}
+    STAT_COLS.forEach((c) => { totals[c] = 0; oppTotals[c] = 0 })
+
+    for (const g of games) {
+        const isHome = g.home_team === team
+        const won = isHome ? g.home_win === 1 : g.home_win === 0
+        if (won) wins++
+        else losses++
+
+        for (const col of STAT_COLS) {
+            totals[col] += isHome ? g[`home_${col}`] ?? 0 : g[`away_${col}`] ?? 0
+            oppTotals[col] += isHome ? g[`away_${col}`] ?? 0 : g[`home_${col}`] ?? 0
+        }
+    }
+    const n = games.length
+    const averages: Record<string, number> = {}
+    const oppAverages: Record<string, number> = {}
+
+    for (const col of STAT_COLS) {
+        averages[col] = totals[col] / n
+        oppAverages[col] = oppTotals[col] / n
+    }
+
+    return {
+        team,
+        gamesPlayed: n,
+        wins,
+        losses,
+        averages,
+        oppAverages,
+        lastGameDate: games[games.length - 1].game_date
+    }
+}
+
+// 
+export async function getAvailableSeasons(team: string): Promise<string[]> {
+    const { data, error } = await supabase
+        .from('games')
+        .select('game_date')
+        .or(`home_team.eq.${team},away_team.eq.${team}`)
+        .order('game_date', { ascending: true })
+    if (error || !data) return []
+    const seasons = new Set(data.map((g) => seasonForDate(new Date(g.game_date))))
+    return Array.from(seasons).sort().reverse()
+}
+
+//All nba team abbreviations, to be updated when expansion occurs
+export const NBA_TEAMS = [
+    'ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW',
+    'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK',
+    'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS',
+]

@@ -28,7 +28,7 @@ export default async function GamesHistory({
 
 }
 function getDefaultStartDate(): string {
-    const d = new Date("2025-01-10")
+    const d = new Date("2026-01-01")
     d.setDate(d.getDate() - 4)
     return d.toISOString().split('T')[0]
 }

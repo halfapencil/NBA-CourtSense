@@ -25,7 +25,6 @@ export async function getRecentGamesByDate(startDate: string, days = 5) {
         console.error("Error getting completed games", error)
         return []
     }
-    console.log(data)
     const byDate = new Map<string, CompletedGames[]>()
 
     for (const game of data ?? []) {
@@ -61,3 +60,4 @@ export async function getPlayerBoxScore(gameId: string) {
     }
     return data
 }
+
