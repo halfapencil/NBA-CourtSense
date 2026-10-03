@@ -13,10 +13,8 @@ export default async function GamePage({
   const parsed = parseGameParams(gameId)
   if (!parsed) notFound()
   const game = await getGame(parsed)
-  console.log(game)
   if (!game) notFound()
   const players = await getPlayerBoxScore(game.game_id)
-  console.log(players)
   return (
     <div className="max-w-[1800px] mx-auto px-6 py-8 space-y-6">
       <div className="bg-[#1A1F2B] border border-[#2A3040] rounded-lg px-6 py-5 flex items-center justify-between">

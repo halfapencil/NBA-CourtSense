@@ -161,6 +161,7 @@ export async function getTeamGameLog(team: string, season: string): Promise<Team
         }
         for (const col of STAT_COLS) {
             row[col] = isHome ? g[`home_${col}`] : g[`away_${col}`]
+            row[`opp_${col}`] = isHome ? g[`away_${col}`] : g[`home_${col}`]
         }
         return row
     })

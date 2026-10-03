@@ -24,6 +24,13 @@ function restColor(days: number | null): string {
 function TeamGameLogRowTooltip({ active, payload, label }: any) {
     if (!active || !payload || payload.length === 0) return null
     const point = payload[0].payload
+    console.log(payload)
+    const labelFor = (key: string) => {
+        if (key === "value") return 'Team'
+        if (key === "oppValue") return 'Opponent'
+        if (key === "rollingAvg") return '5-game avg'
+        return key
+    }
 
     return (
         <div className="bg-[#1A1F2B] border border-[#2A3040] rounded-lg px-3 py-2 text-sm">
@@ -32,7 +39,7 @@ function TeamGameLogRowTooltip({ active, payload, label }: any) {
             </div>
             {payload.map((entry: any) => (
                 <div key={entry.dataKey} style={{ color: entry.color }}>
-                    {entry.dataKey === 'value' ? entry.name ?? 'Value' : '5-game avg'}: {entry.value}
+                    {labelFor(entry.dataKey)} : {entry.value}
                 </div>
             ))}
         </div>
@@ -40,6 +47,7 @@ function TeamGameLogRowTooltip({ active, payload, label }: any) {
 }
 
 export default function TeamTrendChart({ games }: { games: TeamGameLogRow[] }) {
+    const [showOpponent, setShowOpponent] = useState(false)
     const [stat, setStat] = useState('pts')
     const chartData = useMemo(() => {
         const values = games.map((g) => g[stat] ?? 0)
@@ -47,6 +55,7 @@ export default function TeamTrendChart({ games }: { games: TeamGameLogRow[] }) {
         return games.map((g, i) => ({
             date: g.game_date.slice(5),
             value: g[stat],
+            oppValue: g[`opp_${stat}`],
             rollingAvg: rolling[i] !== null ? Number(rolling[i]!.toFixed(1)) : null,
             opponent: g.opponent,
             is_home: g.is_home,
@@ -68,6 +77,14 @@ export default function TeamTrendChart({ games }: { games: TeamGameLogRow[] }) {
                         <option key={s} value={s}>{s.toUpperCase()}</option>
                     ))}
                 </select>
+                <label className="flex items-center gap-2 text-sm text-[#8B93A6]">
+                    <input
+                        type="checkbox"
+                        checked={showOpponent}
+                        onChange={(e) => setShowOpponent(e.target.checked)}>
+                    </input>
+                    Show Opponent
+                </label>
             </div>
 
             <ResponsiveContainer width="100%" height={300}>
@@ -77,12 +94,18 @@ export default function TeamTrendChart({ games }: { games: TeamGameLogRow[] }) {
                     <YAxis stroke="#8B93A6" tick={{ fontSize: 11 }} />
                     <Tooltip content={<TeamGameLogRowTooltip />}
                     />
-                    <Line type="monotone" dataKey="value" stroke="#3D5A80" strokeWidth={1.5}
+                    {!showOpponent && (<><Line type="monotone" dataKey="value" stroke="#3D5A80" strokeWidth={1.5}
                         dot={(props: any) => {
                             const { cx, cy, payload } = props
                             return <circle cx={cx} cy={cy} r={3} fill={restColor(payload.restDays)} />
                         }} />
-                    <Line type="monotone" dataKey="rollingAvg" stroke="#E8984A" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="rollingAvg" stroke="#E8984A" strokeWidth={2} dot={false} />
+                    </>
+                    )}
+                    {showOpponent && (
+                        <Line type="monotone" dataKey="oppValue" stroke="#C4554D" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" />
+                    )}
+
                 </LineChart>
             </ResponsiveContainer>
         </div>
