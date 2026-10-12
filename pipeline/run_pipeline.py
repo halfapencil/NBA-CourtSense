@@ -1,7 +1,7 @@
 from datetime import datetime
 import joblib
 from pathlib import Path
-from .fetch import fetch_upcoming_games
+from .fetch import fetch_upcoming_games, fetch_player_box_score, fetch_current_players
 from .clean import add_home_away, reshape_to_game_level
 from .predict import get_latest_team_form, build_upcoming_features, predict_games
 from .db import (
@@ -9,8 +9,11 @@ from .db import (
     read_games,
     write_games,
     update_prediction_outcome,
+    write_player_box_score,
+    write_players,
 )
 import time
+import pandas as pd
 
 MODELS_DIR = Path(__file__).parent.parent / "models"
 
@@ -44,14 +47,38 @@ def update_completed_games(season: str = "2025-26"):
     write_games(games)
 
 
-def run(date: str | None = None):
+def run(date: str | None = None, refresh_players: bool = False):
     target_date = date or datetime.today().strftime("%Y-%m-%d")
 
     print(f"Pipeline for {target_date}")
-    games = read_games()    
     update_completed_games()
     update_prediction_outcome()
+
+    if refresh_players:
+        players_df = fetch_current_players()
+        write_players(players_df)
+
+    games = read_games()
     print(f"Loaded {len(games)} historical games from database")
+
+    # Fetch player box scores for today's completed games
+    completed_today = games[games["game_date"] == target_date]["game_id"].tolist()
+
+    if completed_today:
+        print(f"Fetching player box scores for {len(completed_today)} games...")
+        box_score_rows = []
+        for game_id in completed_today:
+            try:
+                df = fetch_player_box_score(game_id)
+                if not df.empty:
+                    box_score_rows.append(df)
+            except Exception as e:
+                print(f"  Could not fetch box score for {game_id}: {e}")
+            time.sleep(1)
+
+        if box_score_rows:
+            combined = pd.concat(box_score_rows, ignore_index=True)
+            write_player_box_score(combined)
 
     model = joblib.load(MODELS_DIR / "model.pkl")
     spread_model = joblib.load(MODELS_DIR / "spread_model.pkl")

@@ -8,6 +8,8 @@ from .constants import BASE_STAT_COLS
 load_dotenv(Path(__file__).parent.parent / ".env")
 DATABASE_URL = os.environ["DATABASE_URL"]
 _engine = None
+
+PLAYER_COLS = ["player_id", "player_name", "current_team"]
 PLAYER_GAME_COLS = [
     "game_id",
     "player_id",
@@ -42,6 +44,7 @@ rename_map = {
     "away_team": "away_team",
     "home_win": "home_win",
 }
+
 for c in BASE_STAT_COLS:
     rename_map[f"home_{c}"] = f"home_{c}"
     rename_map[f"away_{c}"] = f"away_{c}"
@@ -136,3 +139,25 @@ def update_prediction_outcome():
         AND p.actual_home_win IS NULL
     """))
     print("Updated predictions for completed games")
+
+
+#given dataframe of players, insert players into database.
+def write_players(player_df: pd.DataFrame):
+    engine = get_engine()
+
+    df = player_df[PLAYER_COLS]
+    df.to_sql("players_staging", engine, if_exists="replace", index=False)
+
+    col_list = ", ".join(PLAYER_COLS)
+    update_cols = [c for c in PLAYER_COLS if c != "player_id"]
+    set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+
+    with engine.begin() as conn:
+        conn.execute(text(f"""
+            INSERT INTO players ({col_list})
+            SELECT {col_list} FROM players_staging
+            ON CONFLICT (player_id) DO UPDATE SET {set_clause}
+        """))
+        conn.execute(text("DROP TABLE players_staging"))
+
+    print(f"Wrote {len(df)} players to database")

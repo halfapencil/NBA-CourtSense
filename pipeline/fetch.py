@@ -1,11 +1,16 @@
-from nba_api.stats.endpoints import leaguegamelog, scoreboardv3, boxscoretraditionalv3
+from nba_api.stats.endpoints import (
+    leaguegamelog,
+    scoreboardv3,
+    boxscoretraditionalv3,
+    commonallplayers,
+)
 from nba_api.stats.static import teams
 from pathlib import Path
 import pandas as pd
 import time
 
 RAW_DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
-
+PLAYER_COLS = ["player_id", "player_name", "current_team"]
 PLAYER_BOX_SCORE_RENAME = {
     "gameId": "game_id",
     "personId": "player_id",
@@ -100,6 +105,21 @@ def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+#get all players from season parameter
+def fetch_current_players(season: str = "2025-26") -> pd.DataFrame:
+    resp = commonallplayers.CommonAllPlayers(is_only_current_season=1, season=season)
+    df = resp.get_data_frames()[0]
+    out = df.rename(
+        columns={
+            "PERSON_ID": "player_id",
+            "DISPLAY_FIRST_LAST": "player_name",
+            "TEAM_ABBREVIATION": "current_team",
+        }
+    )
+    return out[["player_id", "player_name", "current_team"]]
+
+
+# save all games from seasons to a csv
 if __name__ == "__main__":
     seasons = ["2021-22", "2022-23", "2023-24", "2024-25", "2025-26"]
     games_df = fetch_multiple_seasons(seasons)

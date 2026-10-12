@@ -231,7 +231,6 @@ export async function getHeadToHeadPlayerStats(
         gamesPlayed: p.games,
         averages: Object.fromEntries(STAT_COLS.map((c) => [c, p.totals[c] / p.games]))
     }))
-    console.log(data)
     return {
         games,
         playersA: allPlayers.filter((p) => p.team === teamA).sort((a, b) => {

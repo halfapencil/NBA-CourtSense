@@ -25,8 +25,7 @@ function Sidebar() {
     { href: '/games', label: 'Games' },
     { href: '/teams', label: 'Teams' },
     { href: '/teams/head-to-head', label: 'Head To Head' },
-    { href: '/track-record', label: 'Track Record' },
-    { href: '/methodology', label: 'Methodology' },
+    { href: '/players', label: 'Players' },
   ]
 
   return (
