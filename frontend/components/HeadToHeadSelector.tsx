@@ -7,10 +7,12 @@ export default function HeadToHeadSelector({
     teamA,
     teamB,
     season,
+    seasons,
 }: {
     teamA: string
     teamB: string
     season: string
+    seasons: string[]
 }) {
     const router = useRouter()
 
@@ -50,9 +52,13 @@ export default function HeadToHeadSelector({
             <select
                 value={season}
                 onChange={(e) => push({ season: e.target.value })}
-                className="bg-[#1A1F2B] border border-[#2A3040] rounded-md px-3 py-2 text-sm"
+                className="bg-[#1A1F2B] border border-[#2A3040] rounded-md px-3 py-2 text-sm text-white [color-scheme:dark]"
             >
-                {/* same season list source as your Teams page — see note below */}
+                {seasons.map((s) => (
+                    <option key={s} value={s} className="bg-[#1A1F2B] text-white">
+                        {s}
+                    </option>
+                ))}
             </select>
         </div>
     )
