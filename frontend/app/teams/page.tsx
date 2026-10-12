@@ -8,7 +8,6 @@ export default function TeamsPage() {
     const [seasons, setSeasons] = useState<string[]>([])
     const [season, setSeason] = useState(seasonForDate(new Date()))
     const [stats, setStats] = useState<Awaited<ReturnType<typeof getTeamSeasonStats>>>(null)
-    const [oppStats, setOppStats] = useState<Awaited<ReturnType<typeof getTeamSeasonStats>>>(null)
     const [loading, setLoading] = useState(false)
     const [games, setGames] = useState<TeamGameLogRow[]>([])
     useEffect(() => {

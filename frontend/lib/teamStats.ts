@@ -166,3 +166,82 @@ export async function getTeamGameLog(team: string, season: string): Promise<Team
         return row
     })
 }
+
+// Get two teams total stats head to head
+export async function getHeadToHead(teamA: string, teamB: string, season: string) {
+    const { start, end } = seasonDateRange(season)
+    const { data, error } = await supabase
+        .from('games')
+        .select("*")
+        .or(
+            `and(home_team.eq.${teamA},away_team.eq.${teamB}),and(home_team.eq.${teamB},away_team.eq.${teamA})`
+        )
+        .gte('game_date', start)
+        .lte('game_date', end)
+        .order('game_date', { ascending: false })
+
+    if (error) {
+        console.error(error)
+        return []
+    }
+    return data ?? []
+}
+
+// Get two teams players stats for comparison
+export async function getHeadToHeadPlayerStats(
+    teamA: string,
+    teamB: string,
+    season: string
+) {
+    const games = await getHeadToHead(teamA, teamB, season)
+    if (games.length === 0) return { games: [], playersA: [], playersB: [] }
+
+    const gameId = games.map((g) => g.game_id)
+    const { data, error } = await supabase
+        .from('player_games')
+        .select("*")
+        .in('game_id', gameId)
+
+    if (error || !data) {
+        console.error('getHeadToHeadPlayerStats error', error)
+        return { games, playersA: [], playersB: [] }
+    }
+    const byPlayers = new Map<number, { player_name: string; team: string; games: number; totals: Record<string, number> }>()
+
+    for (const row of data) {
+        if (!byPlayers.has(row.player_id)) {
+            byPlayers.set(row.player_id, {
+                player_name: row.player_name,
+                team: row.team,
+                games: 0,
+                totals: Object.fromEntries(STAT_COLS.map((c) => [c, 0]))
+            })
+        }
+        const entry = byPlayers.get(row.player_id)!
+        entry.games += 1
+        for (const col of STAT_COLS) {
+            entry.totals[col] += row[col] ?? 0
+        }
+    }
+
+    const allPlayers = Array.from(byPlayers.entries()).map(([player_id, p]) => ({
+        player_id,
+        player_name: p.player_name,
+        team: p.team,
+        gamesPlayed: p.games,
+        averages: Object.fromEntries(STAT_COLS.map((c) => [c, p.totals[c] / p.games]))
+    }))
+    console.log(data)
+    return {
+        games,
+        playersA: allPlayers.filter((p) => p.team === teamA).sort((a, b) => {
+            if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed
+            return b.averages.pts - a.averages.pts
+        }),
+        playersB: allPlayers.filter((p) => p.team === teamB).sort((a, b) => {
+            if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed
+            return b.averages.pts - a.averages.pts
+        })
+
+    }
+}

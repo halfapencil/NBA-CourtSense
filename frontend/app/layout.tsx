@@ -24,7 +24,7 @@ function Sidebar() {
     { href: '/', label: 'Overview' },
     { href: '/games', label: 'Games' },
     { href: '/teams', label: 'Teams' },
-    { href: '/head-to-head', label: 'Head To Head' },
+    { href: '/teams/head-to-head', label: 'Head To Head' },
     { href: '/track-record', label: 'Track Record' },
     { href: '/methodology', label: 'Methodology' },
   ]
