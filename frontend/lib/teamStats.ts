@@ -90,6 +90,11 @@ function aggregateTeamStats(team: string, games: TeamGameRow[]) {
     let wins = 0
     let losses = 0
 
+    let homeWin = 0
+    let homeLoss = 0
+    let awayWin = 0
+    let awayLoss = 0
+
     const totals: Record<string, number> = {}
     const oppTotals: Record<string, number> = {}
     STAT_COLS.forEach((c) => { totals[c] = 0; oppTotals[c] = 0 })
@@ -97,8 +102,16 @@ function aggregateTeamStats(team: string, games: TeamGameRow[]) {
     for (const g of games) {
         const isHome = g.home_team === team
         const won = isHome ? g.home_win === 1 : g.home_win === 0
-        if (won) wins++
-        else losses++
+        if (won) {
+            wins++
+            if (isHome) homeWin++
+            else awayWin++
+        }
+        else {
+            losses++
+            if (isHome) homeLoss++
+            else awayLoss++
+        }
 
         for (const col of STAT_COLS) {
             totals[col] += isHome ? g[`home_${col}`] ?? 0 : g[`away_${col}`] ?? 0
@@ -121,6 +134,10 @@ function aggregateTeamStats(team: string, games: TeamGameRow[]) {
         losses,
         averages,
         oppAverages,
+        homeWin,
+        homeLoss,
+        awayWin,
+        awayLoss,
         lastGameDate: games[games.length - 1].game_date
     }
 }
@@ -296,7 +313,7 @@ export async function getTeamStatShare(team: string, season: string) {
         return t
     }
 
-    // Pass 1: the team's totals for each game (all played rows for that game)
+
     const teamByGame = new Map<string, Record<string, number>>()
     for (const row of playedRows) {
         const gid = String(row.game_id)
@@ -306,13 +323,12 @@ export async function getTeamStatShare(team: string, season: string) {
         for (const stat of ACCUM) t[stat] += Number(row[stat]) || 0
     }
 
-    // Pass 2: each player's own totals, plus the team's totals in ONLY the games he played
     const byPlayers = new Map<string, {
         name: string
         gp: number
         minutes: number
-        totals: Record<string, number>      // the player's own stats
-        teamTotals: Record<string, number>  // team stats in the games he played
+        totals: Record<string, number>
+        teamTotals: Record<string, number>
     }>()
     const gamesSeen = new Set<string>()
 

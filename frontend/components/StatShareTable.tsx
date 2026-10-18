@@ -103,8 +103,8 @@ export default function StatShareTable({
             <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] table-fixed text-sm">
                     <colgroup>
-                        <col className="w-44" />
-                        <col className="w-14" />
+                        <col className="w-36" />
+                        <col className="w-12" />
                         {COLUMNS.map((c) => (
                             <col key={c.key} className="w-24" />
                         ))}
