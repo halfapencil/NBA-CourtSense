@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from "react"
-import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog } from "@/lib/teamStats"
+import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog, getTeamStatShare, PlayerStatShare } from "@/lib/teamStats"
 import TeamTrendChart from "@/components/TeamTrendChart"
+import StatShareTable from "@/components/StatShareTable"
+
 export default function TeamsPage() {
     const [team, setTeam] = useState('BOS')
     const [seasons, setSeasons] = useState<string[]>([])
@@ -10,6 +12,9 @@ export default function TeamsPage() {
     const [stats, setStats] = useState<Awaited<ReturnType<typeof getTeamSeasonStats>>>(null)
     const [loading, setLoading] = useState(false)
     const [games, setGames] = useState<TeamGameLogRow[]>([])
+
+    const [shares, setShares] = useState<PlayerStatShare[]>([])
+    const [sharesError, setSharesError] = useState<string | null>(null)
     useEffect(() => {
         getAvailableSeasons(team).then((s) => {
             setSeasons(s)
@@ -19,14 +24,19 @@ export default function TeamsPage() {
 
     useEffect(() => {
         setLoading(true)
+        let cancelled = false
         Promise.all([
             getTeamSeasonStats(team, season),
             getTeamGameLog(team, season),
-        ]).then(([s, g]) => {
+            getTeamStatShare(team, season)
+        ]).then(([s, g, sh]) => {
             setStats(s)
             setGames(g)
+            setShares(sh?.players ?? [])
+            setSharesError(sh ? null : 'Could not load share')
             setLoading(false)
         })
+        return () => { cancelled = true }
     }, [team, season])
     return (
         <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
@@ -99,6 +109,12 @@ export default function TeamsPage() {
             {!loading && games.length > 0 && <TeamTrendChart games={games} />
 
             }
+            {!loading && sharesError && (
+                <p className="text-[#C4554D] text-sm">{sharesError}</p>
+            )}
+            {!loading && !sharesError && stats && (
+                <StatShareTable players={shares} team={team} />
+            )}
         </div>
     )
 }

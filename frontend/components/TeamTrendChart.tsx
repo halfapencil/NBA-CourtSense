@@ -24,7 +24,6 @@ function restColor(days: number | null): string {
 function TeamGameLogRowTooltip({ active, payload, label }: any) {
     if (!active || !payload || payload.length === 0) return null
     const point = payload[0].payload
-    console.log(payload)
     const labelFor = (key: string) => {
         if (key === "value") return 'Team'
         if (key === "oppValue") return 'Opponent'

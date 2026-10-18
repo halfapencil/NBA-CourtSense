@@ -1,5 +1,7 @@
 import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { accessedDynamicData } from "next/dist/server/app-render/dynamic-rendering";
+import { accumulateMetadata } from "next/dist/lib/metadata/resolve-metadata";
 
 // All stats to be shown
 export const STAT_COLS = ['pts', 'oreb', 'dreb', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta']
@@ -10,6 +12,9 @@ export const NBA_TEAMS = [
     'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS',
 ]
 
+export const SHARE_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']
+export type ShareStat = (typeof SHARE_STATS)[number]
+export type ShareKey = 'min' | ShareStat | 'usg'
 // Aggregating team stats
 type TeamGameRow = {
     game_id: string
@@ -18,6 +23,14 @@ type TeamGameRow = {
     away_team: string
     home_win: number
     [key: string]: any
+}
+
+export type PlayerStatShare = {
+    playerId: string
+    name: string
+    gp: number
+    minutes: number
+    shares: Record<string, number>
 }
 
 // type for getting all games from a single team
@@ -243,4 +256,110 @@ export async function getHeadToHeadPlayerStats(
         })
 
     }
+}
+export async function getTeamStatShare(team: string, season: string) {
+    const { start, end } = seasonDateRange(season)
+    const { data: game_data, error: game_error } = await supabase
+        .from('games')
+        .select("game_id")
+        .or(`home_team.eq.${team},away_team.eq.${team}`)
+        .gte('game_date', start)
+        .lte('game_date', end)
+
+    if (game_error) throw new Error(`getTeamStatShare games: ${game_error.message}`)
+
+    const gameIds = (game_data ?? []).map((g) => String(g.game_id))
+    if (gameIds.length === 0) return { players: [] as PlayerStatShare[], teamGames: 0, gamesWithBoxScores: 0 }
+
+    const PAGE = 1000
+    const playerRows: any[] = []
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+            .from('player_games')
+            .select("*")
+            .in('game_id', gameIds)
+            .eq('team', team)
+            .order('game_id', { ascending: true })
+            .order('player_id', { ascending: true })
+            .range(from, from + PAGE - 1)
+        if (error) throw new Error(`getTeamStatShare player_games: ${error.message}`)
+        if (!data || data.length === 0) break
+        playerRows.push(...data)
+        if (data.length < PAGE) break
+    }
+
+    const playedRows = playerRows.filter((r) => r.min !== null && r.min !== undefined)
+    const ACCUM = [...SHARE_STATS, 'fga', 'fta']
+    const zero = () => {
+        const t: Record<string, number> = { min: 0 }
+        for (const stat of ACCUM) t[stat] = 0
+        return t
+    }
+
+    // Pass 1: the team's totals for each game (all played rows for that game)
+    const teamByGame = new Map<string, Record<string, number>>()
+    for (const row of playedRows) {
+        const gid = String(row.game_id)
+        if (!teamByGame.has(gid)) teamByGame.set(gid, zero())
+        const t = teamByGame.get(gid)!
+        t.min += Number(row.min) || 0
+        for (const stat of ACCUM) t[stat] += Number(row[stat]) || 0
+    }
+
+    // Pass 2: each player's own totals, plus the team's totals in ONLY the games he played
+    const byPlayers = new Map<string, {
+        name: string
+        gp: number
+        minutes: number
+        totals: Record<string, number>      // the player's own stats
+        teamTotals: Record<string, number>  // team stats in the games he played
+    }>()
+    const gamesSeen = new Set<string>()
+
+    for (const row of playedRows) {
+        const gid = String(row.game_id)
+        const id = String(row.player_id)
+        const minutes = Number(row.min) || 0
+        gamesSeen.add(gid)
+
+        if (!byPlayers.has(id)) {
+            byPlayers.set(id, {
+                name: row.player_name ?? id,
+                gp: 0,
+                minutes: 0,
+                totals: zero(),
+                teamTotals: zero(),
+            })
+        }
+        const entry = byPlayers.get(id)!
+        const teamGame = teamByGame.get(gid)!
+        entry.gp += 1
+        entry.minutes += minutes
+        entry.teamTotals.min += teamGame.min
+
+        for (const stat of ACCUM) {
+            entry.totals[stat] += Number(row[stat]) || 0
+            entry.teamTotals[stat] += teamGame[stat]
+        }
+    }
+
+    const usage = (fga: number, fta: number, tov: number) => fga + 0.44 * fta + tov
+    const share = (part: number, total: number) => (total > 0 ? part / total : 0)
+
+    const players: PlayerStatShare[] = []
+    for (const [playerId, p] of byPlayers) {
+        const shares = {} as Record<ShareKey, number>
+        shares.min = share(p.minutes, p.teamTotals.min)
+        for (const stat of SHARE_STATS) {
+            shares[stat] = share(p.totals[stat], p.teamTotals[stat])
+        }
+        shares.usg = share(
+            usage(p.totals.fga, p.totals.fta, p.totals.tov),
+            usage(p.teamTotals.fga, p.teamTotals.fta, p.teamTotals.tov)
+        )
+        players.push({ playerId, name: p.name, gp: p.gp, minutes: p.minutes, shares })
+    }
+    players.sort((a, b) => b.minutes - a.minutes)
+    return { players, teamGames: gameIds.length, gamesWithBoxScores: gamesSeen.size }
+
 }
