@@ -46,7 +46,6 @@ async function getModelStats() {
 async function loadStandings(date: string) {
   try {
     const result = await getStandings(seasonForDate(new Date("2026-10-25")))
-    console.log('standings', result)
     return result
   } catch (err) {
     console.error(err)
