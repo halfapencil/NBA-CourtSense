@@ -63,3 +63,19 @@ export async function getPlayerBoxScore(gameId: string) {
     }
     return data
 }
+
+export async function getGamePredictions(home: string, away: string, date: string) {
+    const { data, error } = await supabase
+        .from('predictions')
+        .select("*")
+        .eq('home_team', home)
+        .eq('away_team', away)
+        .eq('game_date', date)
+        .maybeSingle()
+    if (error) {
+        console.error("Queries getGamePredictions", error)
+        return ""
+    }
+    console.log(data)
+    return data
+}

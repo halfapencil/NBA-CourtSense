@@ -3,6 +3,7 @@ from nba_api.stats.endpoints import (
     scoreboardv3,
     boxscoretraditionalv3,
     commonallplayers,
+    scheduleleaguev2,
 )
 from nba_api.stats.static import teams
 from pathlib import Path
@@ -34,6 +35,47 @@ PLAYER_BOX_SCORE_RENAME = {
     "freeThrowsAttempted": "fta",
     "plusMinusPoints": "plus_minus",
 }
+
+SCHEDULE_COLS = {
+    "gameId": "game_id",
+    "gameDateTimeUTC": "tipoff_utc",
+    "homeTeam_teamId": "home_team_id",
+    "awayTeam_teamId": "away_team_id",
+    "arenaName": "arena_name",
+    "arenaCity": "arena_city",
+}
+
+
+def fetch_schedule(season: str) -> pd.DataFrame:
+    # Fetch scheduled start times (and venue) for every game in a season
+    sched = scheduleleaguev2.ScheduleLeagueV2(season=season)
+    df = sched.get_data_frames()[0]
+    df = df.rename(columns=SCHEDULE_COLS)
+    df["tipoff_utc"] = pd.to_datetime(df["tipoff_utc"], utc=True)
+    return df[list(SCHEDULE_COLS.values())]
+
+
+def fetch_multiple_schedules(seasons: list[str]) -> pd.DataFrame:
+    all_sched = []
+    for season in seasons:
+        print(f"Fetching schedule {season}...")
+        all_sched.append(fetch_schedule(season))
+        time.sleep(1)
+    return pd.concat(all_sched, ignore_index=True)
+
+
+def fetch_tipoff_for_date(date: str) -> pd.DataFrame:
+    sb = scoreboardv3.ScoreboardV3(game_date=date)
+    games = sb.get_dict()["scoreboard"]["games"]
+    return pd.DataFrame(
+        [
+            {
+                "game_id": g["gameId"],
+                "tipoff_utc": pd.to_datetime(g["gameTimeUTC"], utc=True),
+            }
+            for g in games
+        ]
+    )
 
 
 def fetch_player_box_score(game_id: str) -> pd.DataFrame:
@@ -105,7 +147,7 @@ def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-#get all players from season parameter
+# get all players from season parameter
 def fetch_current_players(season: str = "2025-26") -> pd.DataFrame:
     resp = commonallplayers.CommonAllPlayers(is_only_current_season=1, season=season)
     df = resp.get_data_frames()[0]
@@ -121,7 +163,9 @@ def fetch_current_players(season: str = "2025-26") -> pd.DataFrame:
 
 # save all games from seasons to a csv
 if __name__ == "__main__":
-    seasons = ["2021-22", "2022-23", "2023-24", "2024-25", "2025-26"]
+    seasons = ["2021-22", "2022-23", "2023-24", "2024-25", "2025-26", "2026-27"]
+    # sched_df = fetch_multiple_schedules(seasons)
+    # sched_df.to_csv(RAW_DATA_DIR / "nba_schedule_raw.csv", index=False)
     games_df = fetch_multiple_seasons(seasons)
     games_df.to_csv(RAW_DATA_DIR / "nba_games_raw.csv", index=False)
     print(games_df.columns)

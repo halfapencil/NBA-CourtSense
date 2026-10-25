@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { StatCard } from '@/components/StatCard';
+import { getStandings, seasonForDate } from '@/lib/teamStats';
+import Standings from '@/components/Standings';
+
+
 type Prediction = {
   game_date: string
   home_team: string
@@ -11,12 +15,12 @@ type Prediction = {
 
 async function getTodaysPredictions(): Promise<Prediction[]> {
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
   const { data, error } = await supabase
     .from('predictions')
     .select("game_date, home_team, away_team, home_win_prob, implied_spread, model_spread")
-    .eq("game_date", "2026-04-12")
+    .eq("game_date", today)
     .order("home_win_prob", { ascending: false })
 
   if (error) {
@@ -39,32 +43,54 @@ async function getModelStats() {
   return { accuracy: (correct / data.length) * 100, total: data.length }
 }
 
+async function loadStandings(date: string) {
+  try {
+    const result = await getStandings(seasonForDate(new Date("2026-10-25")))
+    console.log('standings', result)
+    return result
+  } catch (err) {
+    console.error(err)
+    return null
+  }
+}
+
+// Landing page, shows predictions, track record and the schedule for the day.
 export default async function Home() {
-  const date = '2026-04-12';
-  const [predictions, stats] = await Promise.all([getTodaysPredictions(), getModelStats()])
-  //const date = new Date().toISOString().split("T")[0]
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  const [predictions, stats, standings] = await Promise.all([getTodaysPredictions(), getModelStats(), loadStandings(date)])
   return (
-    <div className='max-w-4xl'>
+    <div>
       <h1 className='text-2xl font-semibold mb-6'>Overview</h1>
-      <div className='grid grid-cols-3 gap-4 mb-10'>
-        <StatCard
-          label='Season accuracy'
-          value={stats.accuracy !== null ? `${stats.accuracy.toFixed(1)}%` : "-"}
-          sublabel={`${stats.total} games predicted`}
-        />
-        <StatCard
-          label="Games Today" value={String(predictions.length)} />
-        <StatCard label="Model" value='Logistic Regression' sublabel='v1' />
-      </div>
-      <div className='max-w-2xl mx-auto'>
-        <h1 className='text-3xl font-semibold mb-8'>NBA Predictions for {date}</h1>
-        {predictions.length === 0 ?
-          (<p className='text-[#8B923A6]'> No games scheduled today, or predictions are not available</p>) : (
+
+      <div className='grid gap-8 xl:grid-cols-[minmax(0,720px)_420px] items-start'>
+        <div className='min-w-0'>
+          <div className='grid grid-cols-3 gap-4 mb-10'>
+            <StatCard
+              label='Season accuracy'
+              value={stats.accuracy !== null ? `${stats.accuracy.toFixed(1)}%` : '-'}
+              sublabel={`${stats.total} games predicted`}
+            />
+            <StatCard label='Games Today' value={String(predictions.length)} />
+            <StatCard label='Model' value='Logistic Regression' sublabel='v1' />
+          </div>
+
+          <h2 className='text-3xl font-semibold mb-8'>NBA Predictions for {date}</h2>
+          {predictions.length === 0 ? (
+            <p className='text-[#8B93A6]'>No games scheduled today, or predictions are not available</p>
+          ) : (
             <div className='space-y-3'>
               {predictions.map((game) => (
-                <GameCard key={`${game.home_team} - ${game.away_team}`} game={game} />
+                <GameCard key={`${game.home_team}-${game.away_team}`} game={game} />
               ))}
-            </div>)}
+            </div>
+          )}
+        </div>
+
+        {standings ? (
+          <Standings east={standings.east} west={standings.west} overall={standings.overall} />
+        ) : (
+          <p className='text-sm text-[#C4554D]'>Could not load standings.</p>
+        )}
       </div>
     </div>
   )

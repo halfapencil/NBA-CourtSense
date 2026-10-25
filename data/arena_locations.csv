@@ -1,0 +1,31 @@
+team_id,abbreviation,team_name,arena_name,city,latitude,longitude,timezone
+1610612737,ATL,Atlanta Hawks,,Atlanta,,,America/New_York
+1610612738,BOS,Boston Celtics,,Boston,,,America/New_York
+1610612751,BKN,Brooklyn Nets,,Brooklyn,,,America/New_York
+1610612766,CHA,Charlotte Hornets,,Charlotte,,,America/New_York
+1610612741,CHI,Chicago Bulls,,Chicago,,,America/Chicago
+1610612739,CLE,Cleveland Cavaliers,,Cleveland,,,America/New_York
+1610612742,DAL,Dallas Mavericks,,Dallas,,,America/Chicago
+1610612743,DEN,Denver Nuggets,,Denver,,,America/Denver
+1610612765,DET,Detroit Pistons,,Detroit,,,America/New_York
+1610612744,GSW,Golden State Warriors,,San Francisco,,,America/Los_Angeles
+1610612745,HOU,Houston Rockets,,Houston,,,America/Chicago
+1610612754,IND,Indiana Pacers,,Indianapolis,,,America/New_York
+1610612746,LAC,Los Angeles Clippers,,Los Angeles,,,America/Los_Angeles
+1610612747,LAL,Los Angeles Lakers,,Los Angeles,,,America/Los_Angeles
+1610612763,MEM,Memphis Grizzlies,,Memphis,,,America/Chicago
+1610612748,MIA,Miami Heat,,Miami,,,America/New_York
+1610612749,MIL,Milwaukee Bucks,,Milwaukee,,,America/Chicago
+1610612750,MIN,Minnesota Timberwolves,,Minneapolis,,,America/Chicago
+1610612740,NOP,New Orleans Pelicans,,New Orleans,,,America/Chicago
+1610612752,NYK,New York Knicks,,New York,,,America/New_York
+1610612760,OKC,Oklahoma City Thunder,,Oklahoma City,,,America/Chicago
+1610612753,ORL,Orlando Magic,,Orlando,,,America/New_York
+1610612755,PHI,Philadelphia 76ers,,Philadelphia,,,America/New_York
+1610612756,PHX,Phoenix Suns,,Phoenix,,,America/Phoenix
+1610612757,POR,Portland Trail Blazers,,Portland,,,America/Los_Angeles
+1610612758,SAC,Sacramento Kings,,Sacramento,,,America/Los_Angeles
+1610612759,SAS,San Antonio Spurs,,San Antonio,,,America/Chicago
+1610612761,TOR,Toronto Raptors,,Toronto,,,America/Toronto
+1610612762,UTA,Utah Jazz,,Salt Lake City,,,America/Denver
+1610612764,WAS,Washington Wizards,,Washington,,,America/New_York

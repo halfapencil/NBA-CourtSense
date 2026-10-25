@@ -30,10 +30,9 @@ def fetch_with_retry(fetch_fn, max_retries=3, delay=10):
                 raise
 
 
-def update_completed_games(season: str = "2025-26"):
+def update_completed_games(season: str = "2026-27"):
     from nba_api.stats.endpoints import leaguegamelog
-    import pandas as pd
-
+    
     game_log = fetch_with_retry(
         lambda: leaguegamelog.LeagueGameLog(
             season=season, season_type_all_star="Regular Season"
@@ -41,6 +40,9 @@ def update_completed_games(season: str = "2025-26"):
     )
 
     raw = game_log.get_data_frames()[0]
+    if raw.empty:
+        print("No completed games yet")
+        return
     raw["GAME_DATE"] = pd.to_datetime(raw["GAME_DATE"])
     raw = add_home_away(raw)
     games = reshape_to_game_level(raw)

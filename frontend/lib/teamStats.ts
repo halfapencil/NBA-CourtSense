@@ -12,6 +12,26 @@ export const NBA_TEAMS = [
     'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS',
 ]
 
+export const TEAM_CONFERENCE: Record<string, 'East' | 'West'> = {
+    ATL: 'East', BOS: 'East', BKN: 'East', CHA: 'East', CHI: 'East',
+    CLE: 'East', DET: 'East', IND: 'East', MIA: 'East', MIL: 'East',
+    NYK: 'East', ORL: 'East', PHI: 'East', TOR: 'East', WAS: 'East',
+    DAL: 'West', DEN: 'West', GSW: 'West', HOU: 'West', LAC: 'West',
+    LAL: 'West', MEM: 'West', MIN: 'West', NOP: 'West', OKC: 'West',
+    PHX: 'West', POR: 'West', SAC: 'West', SAS: 'West', UTA: 'West',
+}
+
+export type StandingRow = {
+    team: string
+    wins: number
+    losses: number
+    pct: number
+    gb: number
+    last10: string
+    conference: 'East' | 'West'
+}
+
+
 export const SHARE_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']
 export type ShareStat = (typeof SHARE_STATS)[number]
 export type ShareKey = 'min' | ShareStat | 'usg'
@@ -47,7 +67,7 @@ export type TeamGameLogRow = {
 export function seasonForDate(date: Date): string {
     const year = date.getUTCFullYear()
     const month = date.getUTCMonth()
-    const startYear = month >= 10 ? year : year - 1
+    const startYear = month >= 9 ? year : year - 1
 
     return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`
 }
@@ -378,4 +398,72 @@ export async function getTeamStatShare(team: string, season: string) {
     players.sort((a, b) => b.minutes - a.minutes)
     return { players, teamGames: gameIds.length, gamesWithBoxScores: gamesSeen.size }
 
+}
+
+export async function getStandings(season: string) {
+    const { start, end } = seasonDateRange(season)
+
+    const PAGE = 1000
+    const games: any[] = []
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+            .from('games')
+            .select('game_id, game_date, home_team, away_team, home_win')
+            .gte('game_date', start)
+            .lte('game_date', end)
+            .order('game_date', { ascending: true })
+            .order('game_id', { ascending: true })
+            .range(from, from + PAGE - 1)
+        if (error) {
+            console.error(`getStandings ${error}`)
+        }
+        if (!data || data.length === 0) break
+        games.push(...data)
+        if (data.length < PAGE) break
+    }
+
+    const records = new Map<string, { wins: number, loss: number, results: boolean[] }>()
+    for (const team of Object.keys(TEAM_CONFERENCE)) {
+        records.set(team, { wins: 0, loss: 0, results: [] })
+    }
+    for (const g of games) {
+        const home = records.get(g.home_team)
+        const away = records.get(g.away_team)
+        if (!home || !away) continue
+        const homeWon = g.home_win === 1
+        if (homeWon) { home.wins++; away.loss++ } else { away.wins++; home.loss++ }
+        home.results.push(homeWon)
+        away.results.push(!homeWon)
+    }
+    const rows: StandingRow[] = []
+    for (const [team, r] of records) {
+        const gp = r.wins + r.loss
+        const last10 = r.results.slice(-10)
+        const l10Wins = last10.filter(Boolean).length
+        rows.push({
+            team,
+            conference: TEAM_CONFERENCE[team],
+            wins: r.wins,
+            losses: r.loss,
+            pct: gp > 0 ? r.wins / gp : 0,
+            gb: 0,
+            last10: last10.length ? `${l10Wins}-${last10.length - l10Wins}` : '-',
+        })
+    }
+    const rank = (list: StandingRow[]): StandingRow[] => {
+        const sorted = [...list].sort(
+            (a, b) => b.pct - a.pct || b.wins - a.wins || a.team.localeCompare(b.team)
+        )
+        const leader = sorted[0]
+        return sorted.map((r) => ({
+            ...r,
+            gb: (leader.wins - r.wins + (r.losses - leader.losses)) / 2,
+        }))
+    }
+
+    return {
+        east: rank(rows.filter((r) => r.conference === 'East')),
+        west: rank(rows.filter((r) => r.conference === 'West')),
+        overall: rank(rows),
+    }
 }
