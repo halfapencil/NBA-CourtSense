@@ -6,6 +6,7 @@ import TeamTrendChart from "@/components/TeamTrendChart"
 import StatShareTable from "@/components/StatShareTable"
 import GamesHistory from "@/components/GameHistory"
 
+// Display stats for single team
 export default function TeamsPage() {
     const [team, setTeam] = useState('BOS')
     const [seasons, setSeasons] = useState<string[]>([])

@@ -2,6 +2,8 @@
 import { getPlayerSeasonStats, getTeamRoster } from "@/lib/playerStats";
 import { useState, useEffect } from "react";
 import { NBA_TEAMS, getAvailableSeasons, seasonForDate } from "@/lib/teamStats";
+
+// Shows players stats
 export default function PlayersPage() {
     const [roster, setRoster] = useState<Awaited<ReturnType<typeof getTeamRoster>>>([])
     const [team, setTeam] = useState('BOS')

@@ -98,6 +98,7 @@ function PlayerStatTable({ team, players }: { team: string; players: H2HPlayerRo
     )
 }
 
+// Compare two teams
 export default async function HeadToHeadPage({
     searchParams,
 }: {

@@ -2,6 +2,7 @@ import Link from "next/link"
 import { CompletedGames, getRecentGamesByDate } from "@/lib/queries"
 import { DateNav } from "@/components/DateNav"
 
+// History page, in /games
 export default async function GamesHistory({
     searchParams,
 }: {
