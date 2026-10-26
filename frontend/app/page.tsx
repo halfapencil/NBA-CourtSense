@@ -3,7 +3,7 @@ import { StatCard } from '@/components/StatCard';
 import { getStandings, seasonForDate } from '@/lib/teamStats';
 import Standings from '@/components/Standings';
 
-
+export const dynamic = 'force-dynamic'
 type Prediction = {
   game_date: string
   home_team: string
@@ -45,7 +45,7 @@ async function getModelStats() {
 
 async function loadStandings(date: string) {
   try {
-    const result = await getStandings(seasonForDate(new Date("2026-10-25")))
+    const result = await getStandings(seasonForDate(new Date()))
     return result
   } catch (err) {
     console.error(err)

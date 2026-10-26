@@ -151,6 +151,7 @@ def fetch_upcoming_games(game_date: str) -> pd.DataFrame:
 def fetch_current_players(season: str = "2025-26") -> pd.DataFrame:
     resp = commonallplayers.CommonAllPlayers(is_only_current_season=1, season=season)
     df = resp.get_data_frames()[0]
+    print(df.columns)
     out = df.rename(
         columns={
             "PERSON_ID": "player_id",
@@ -170,3 +171,4 @@ if __name__ == "__main__":
     games_df.to_csv(RAW_DATA_DIR / "nba_games_raw.csv", index=False)
     print(games_df.columns)
     print(f"Saved {len(games_df)} rows")
+    # fetch_current_players()
