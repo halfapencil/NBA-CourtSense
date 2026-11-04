@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect } from "react"
-import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog, getTeamStatShare, PlayerStatShare } from "@/lib/teamStats"
+import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog, getTeamStatShare, PlayerStatShare, getTeamPositionAgg, PositionAgg, getOpponentPositionAgg } from "@/lib/teamStats"
 import TeamTrendChart from "@/components/TeamTrendChart"
 import StatShareTable from "@/components/StatShareTable"
 import GamesHistory from "@/components/GameHistory"
+import PositionShareCard from "@/components/PositionShareCard"
 
 // Display stats for single team
 export default function TeamsPage() {
@@ -15,6 +16,8 @@ export default function TeamsPage() {
     const [loading, setLoading] = useState(false)
     const [games, setGames] = useState<TeamGameLogRow[]>([])
 
+    const [oppAgg, setOppAgg] = useState<PositionAgg[] | null>(null)
+    const [posAgg, setPosAgg] = useState<PositionAgg[] | null>(null)
     const [shares, setShares] = useState<PlayerStatShare[]>([])
     const [sharesError, setSharesError] = useState<string | null>(null)
     useEffect(() => {
@@ -30,12 +33,16 @@ export default function TeamsPage() {
         Promise.all([
             getTeamSeasonStats(team, season),
             getTeamGameLog(team, season),
-            getTeamStatShare(team, season)
-        ]).then(([s, g, sh]) => {
+            getTeamStatShare(team, season),
+            getTeamPositionAgg(team, season),
+            getOpponentPositionAgg(team, season),
+        ]).then(([s, g, sh, pa, oa]) => {
             setStats(s)
             setGames(g)
             setShares(sh?.players ?? [])
             setSharesError(sh ? null : 'Could not load share')
+            setPosAgg(pa)
+            setOppAgg(oa)
             setLoading(false)
         })
         return () => { cancelled = true }
@@ -131,6 +138,7 @@ export default function TeamsPage() {
                 </div>
 
                 {!loading && games.length > 0 && <GamesHistory games={games} team={team} />}
+                {!loading && posAgg && <PositionShareCard team={posAgg} opp={oppAgg} teamLabel={team} />}
             </div>
         </div>
     )

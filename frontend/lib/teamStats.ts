@@ -31,7 +31,6 @@ export type StandingRow = {
     conference: 'East' | 'West'
 }
 
-
 export const SHARE_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']
 export type ShareStat = (typeof SHARE_STATS)[number]
 export type ShareKey = 'min' | ShareStat | 'usg'
@@ -64,6 +63,116 @@ export type TeamGameLogRow = {
     [key: string]: any
 }
 
+export type PositionGroup = 'G' | 'F' | 'C' | 'BENCH'
+export const POS_ORDER: PositionGroup[] = ['G', 'F', 'C', 'BENCH']
+
+export const POS_STAT_KEYS = [
+    'pts', 'reb', 'ast', 'stl', 'blk', 'tov',
+    'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'dreb', 'pf',
+] as const
+export type PosStatKey = typeof POS_STAT_KEYS[number]
+export type StatRecord = Record<PosStatKey, number>
+
+export interface PositionAgg {
+    pos: PositionGroup
+    avg: StatRecord          // per game, whole season
+    share: StatRecord        // share of team total (0-1), whole season
+    recentShare: StatRecord  // share of team total, last N games
+}
+
+const emptyStats = (): StatRecord =>
+    Object.fromEntries(POS_STAT_KEYS.map((k) => [k, 0])) as StatRecord
+
+const normalizePos = (p: string | null): PositionGroup => {
+    const v = (p ?? '').trim().toUpperCase()
+    if (v === 'G' || v === 'F' || v === 'C') return v
+    return 'BENCH'
+}
+function aggregatePositions(data: any[], recentN: number): PositionAgg[] | null {
+    if (!data.length) return null
+
+    type GameAgg = { date: string; pos: Record<PositionGroup, StatRecord> }
+    const byGame = new Map<string, GameAgg>()
+
+    for (const r of data) {
+        const pos = normalizePos(r.position)
+        let g = byGame.get(r.game_id)
+        if (!g) {
+            g = {
+                date: r.games.game_date,
+                pos: { G: emptyStats(), F: emptyStats(), C: emptyStats(), BENCH: emptyStats() },
+            }
+            byGame.set(r.game_id, g)
+        }
+        for (const k of POS_STAT_KEYS) g.pos[pos][k] += r[k] ?? 0
+    }
+
+    const games = [...byGame.values()].sort((a, b) => a.date.localeCompare(b.date))
+    const recent = games.slice(-recentN)
+
+    const totals = (list: GameAgg[]) => {
+        const out = { G: emptyStats(), F: emptyStats(), C: emptyStats(), BENCH: emptyStats() }
+        for (const g of list)
+            for (const p of POS_ORDER)
+                for (const k of POS_STAT_KEYS) out[p][k] += g.pos[p][k]
+        return out
+    }
+    const seasonTot = totals(games)
+    const recentTot = totals(recent)
+
+    const shareOf = (tot: ReturnType<typeof totals>, pos: PositionGroup): StatRecord => {
+        const s = emptyStats()
+        for (const k of POS_STAT_KEYS) {
+            const teamTotal = POS_ORDER.reduce((t, p) => t + tot[p][k], 0)
+            s[k] = teamTotal ? tot[pos][k] / teamTotal : 0
+        }
+        return s
+    }
+
+    return POS_ORDER.map((pos) => {
+        const avg = emptyStats()
+        for (const k of POS_STAT_KEYS) avg[k] = seasonTot[pos][k] / games.length
+        return { pos, avg, share: shareOf(seasonTot, pos), recentShare: shareOf(recentTot, pos) }
+    })
+}
+
+const POS_SELECT = `game_id, team, position, ${POS_STAT_KEYS.join(', ')}, games!inner(game_date)`
+
+export async function getTeamPositionAgg(team: string, season: string, recentN = 10) {
+    const { start, end } = seasonDateRange(season)
+    const { data, error } = await supabase
+        .from('player_games')
+        .select(POS_SELECT)
+        .eq('team', team)
+        .gte('games.game_date', start)
+        .lt('games.game_date', end)
+        .gt('min', 0)
+        .range(0, 4999)
+    if (error) { console.error('team position agg', error.message, error.hint); return null }
+    return aggregatePositions(data ?? [], recentN)
+}
+
+export async function getOpponentPositionAgg(team: string, season: string, recentN = 10) {
+    const { start, end } = seasonDateRange(season)
+    const { data: gameRows, error: gErr } = await supabase
+        .from('games')
+        .select('game_id')
+        .gte('game_date', start)
+        .lt('game_date', end)
+        .or(`home_team.eq.${team},away_team.eq.${team}`)
+    if (gErr) { console.error('opp games query', gErr.message, gErr.hint); return null }
+    if (!gameRows?.length) { console.warn('opp games query: no rows'); return null }
+
+    const { data, error } = await supabase
+        .from('player_games')
+        .select(POS_SELECT)
+        .in('game_id', gameRows.map((g) => g.game_id))
+        .neq('team', team)
+        .gt('min', 0)
+        .range(0, 4999)
+    if (error) { console.error('opp position agg', error.message, error.hint); return null }
+    return aggregatePositions(data ?? [], recentN)
+}
 export function seasonForDate(date: Date): string {
     const year = date.getUTCFullYear()
     const month = date.getUTCMonth()
