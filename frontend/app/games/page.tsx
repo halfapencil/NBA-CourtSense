@@ -13,7 +13,7 @@ export default async function GamesHistory({
     const columns = await getRecentGamesByDate(startDate, 5)
     return (
         <div>
-            <h1 className="text-2xl font-semibold">Games Results</h1>
+            <h1 className="text-2xl font-semibold">Games Results Last 5 Game Days</h1>
             <DateNav currentStart={startDate} />
             {columns.length === 0 ? (
                 <p className="text-[#8B93A6]"> No games completed.</p>

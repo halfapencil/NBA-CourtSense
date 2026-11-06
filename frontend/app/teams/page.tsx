@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from "react"
-import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog, getTeamStatShare, PlayerStatShare, getTeamPositionAgg, PositionAgg, getOpponentPositionAgg } from "@/lib/teamStats"
+import { getTeamSeasonStats, getAvailableSeasons, seasonForDate, NBA_TEAMS, STAT_COLS, TeamGameLogRow, getTeamGameLog, getTeamStatShare, PlayerStatShare, PositionAgg, getTeamPageData } from "@/lib/teamStats"
 import TeamTrendChart from "@/components/TeamTrendChart"
 import StatShareTable from "@/components/StatShareTable"
 import GamesHistory from "@/components/GameHistory"
@@ -30,19 +30,14 @@ export default function TeamsPage() {
     useEffect(() => {
         setLoading(true)
         let cancelled = false
-        Promise.all([
-            getTeamSeasonStats(team, season),
-            getTeamGameLog(team, season),
-            getTeamStatShare(team, season),
-            getTeamPositionAgg(team, season),
-            getOpponentPositionAgg(team, season),
-        ]).then(([s, g, sh, pa, oa]) => {
-            setStats(s)
-            setGames(g)
-            setShares(sh?.players ?? [])
-            setSharesError(sh ? null : 'Could not load share')
-            setPosAgg(pa)
-            setOppAgg(oa)
+        getTeamPageData(team, season).then(({ stats, log, shares, posAgg, oppAgg }) => {
+            if (cancelled) return
+            setStats(stats)
+            setGames(log)
+            setShares(shares?.players ?? [])
+            setSharesError(shares ? null : 'Could not load share')
+            setPosAgg(posAgg)
+            setOppAgg(oppAgg)
             setLoading(false)
         })
         return () => { cancelled = true }

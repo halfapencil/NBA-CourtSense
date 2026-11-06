@@ -1,11 +1,17 @@
-import { isAuthSessionMissingError } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
-import { accessedDynamicData } from "next/dist/server/app-render/dynamic-rendering";
-import { accumulateMetadata } from "next/dist/lib/metadata/resolve-metadata";
+import { supabase } from "./supabase"
 
-// All stats to be shown
-export const STAT_COLS = ['pts', 'oreb', 'dreb', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta']
-//All nba team abbreviations, to be updated when expansion occurs
+// ───────────────────────── Constants ─────────────────────────
+
+// One list of box-score stats, shared by the team table and the position table.
+const STATS = [
+    'pts', 'oreb', 'dreb', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf',
+    'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta',
+] as const
+export const STAT_COLS: string[] = [...STATS]
+export const POS_STAT_KEYS = STATS
+export type PosStatKey = (typeof STATS)[number]
+
+// All nba team abbreviations, to be updated when expansion occurs
 export const NBA_TEAMS = [
     'ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW',
     'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK',
@@ -21,6 +27,12 @@ export const TEAM_CONFERENCE: Record<string, 'East' | 'West'> = {
     PHX: 'West', POR: 'West', SAC: 'West', SAS: 'West', UTA: 'West',
 }
 
+export const SHARE_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']
+export type ShareStat = (typeof SHARE_STATS)[number]
+export type ShareKey = 'min' | ShareStat | 'usg'
+
+// ───────────────────────── Types ─────────────────────────
+
 export type StandingRow = {
     team: string
     wins: number
@@ -31,16 +43,23 @@ export type StandingRow = {
     conference: 'East' | 'West'
 }
 
-export const SHARE_STATS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']
-export type ShareStat = (typeof SHARE_STATS)[number]
-export type ShareKey = 'min' | ShareStat | 'usg'
-// Aggregating team stats
 type TeamGameRow = {
     game_id: string
     game_date: string
     home_team: string
     away_team: string
     home_win: number
+    [key: string]: any
+}
+
+type PlayerGameRow = {
+    game_id: string
+    game_date: string
+    player_id: string | number
+    player_name: string | null
+    team: string
+    position: string | null
+    min: number | null
     [key: string]: any
 }
 
@@ -52,7 +71,7 @@ export type PlayerStatShare = {
     shares: Record<string, number>
 }
 
-// type for getting all games from a single team
+// One row per game for a single team
 export type TeamGameLogRow = {
     game_id: string
     game_date: string
@@ -65,12 +84,6 @@ export type TeamGameLogRow = {
 
 export type PositionGroup = 'G' | 'F' | 'C' | 'BENCH'
 export const POS_ORDER: PositionGroup[] = ['G', 'F', 'C', 'BENCH']
-
-export const POS_STAT_KEYS = [
-    'pts', 'reb', 'ast', 'stl', 'blk', 'tov',
-    'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'dreb', 'pf',
-] as const
-export type PosStatKey = typeof POS_STAT_KEYS[number]
 export type StatRecord = Record<PosStatKey, number>
 
 export interface PositionAgg {
@@ -80,261 +93,316 @@ export interface PositionAgg {
     recentShare: StatRecord  // share of team total, last N games
 }
 
-const emptyStats = (): StatRecord =>
-    Object.fromEntries(POS_STAT_KEYS.map((k) => [k, 0])) as StatRecord
+// ───────────────────────── Shared helpers ─────────────────────────
 
-const normalizePos = (p: string | null): PositionGroup => {
-    const v = (p ?? '').trim().toUpperCase()
-    if (v === 'G' || v === 'F' || v === 'C') return v
-    return 'BENCH'
-}
-function aggregatePositions(data: any[], recentN: number): PositionAgg[] | null {
-    if (!data.length) return null
+const teamFilter = (team: string) => `home_team.eq.${team},away_team.eq.${team}`
 
-    type GameAgg = { date: string; pos: Record<PositionGroup, StatRecord> }
-    const byGame = new Map<string, GameAgg>()
+const isPlayed = (r: { min?: unknown }) => Number(r.min) > 0
 
-    for (const r of data) {
-        const pos = normalizePos(r.position)
-        let g = byGame.get(r.game_id)
-        if (!g) {
-            g = {
-                date: r.games.game_date,
-                pos: { G: emptyStats(), F: emptyStats(), C: emptyStats(), BENCH: emptyStats() },
-            }
-            byGame.set(r.game_id, g)
-        }
-        for (const k of POS_STAT_KEYS) g.pos[pos][k] += r[k] ?? 0
-    }
+const zeroStats = () => Object.fromEntries(STAT_COLS.map((c) => [c, 0])) as Record<string, number>
 
-    const games = [...byGame.values()].sort((a, b) => a.date.localeCompare(b.date))
-    const recent = games.slice(-recentN)
+const daysBetween = (a: string, b: string) =>
+    Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
 
-    const totals = (list: GameAgg[]) => {
-        const out = { G: emptyStats(), F: emptyStats(), C: emptyStats(), BENCH: emptyStats() }
-        for (const g of list)
-            for (const p of POS_ORDER)
-                for (const k of POS_STAT_KEYS) out[p][k] += g.pos[p][k]
-        return out
-    }
-    const seasonTot = totals(games)
-    const recentTot = totals(recent)
+const seasonLabel = (startYear: number) =>
+    `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`
 
-    const shareOf = (tot: ReturnType<typeof totals>, pos: PositionGroup): StatRecord => {
-        const s = emptyStats()
-        for (const k of POS_STAT_KEYS) {
-            const teamTotal = POS_ORDER.reduce((t, p) => t + tot[p][k], 0)
-            s[k] = teamTotal ? tot[pos][k] / teamTotal : 0
-        }
-        return s
-    }
-
-    return POS_ORDER.map((pos) => {
-        const avg = emptyStats()
-        for (const k of POS_STAT_KEYS) avg[k] = seasonTot[pos][k] / games.length
-        return { pos, avg, share: shareOf(seasonTot, pos), recentShare: shareOf(recentTot, pos) }
-    })
-}
-
-const POS_SELECT = `game_id, team, position, ${POS_STAT_KEYS.join(', ')}, games!inner(game_date)`
-
-export async function getTeamPositionAgg(team: string, season: string, recentN = 10) {
-    const { start, end } = seasonDateRange(season)
-    const { data, error } = await supabase
-        .from('player_games')
-        .select(POS_SELECT)
-        .eq('team', team)
-        .gte('games.game_date', start)
-        .lt('games.game_date', end)
-        .gt('min', 0)
-        .range(0, 4999)
-    if (error) { console.error('team position agg', error.message, error.hint); return null }
-    return aggregatePositions(data ?? [], recentN)
-}
-
-export async function getOpponentPositionAgg(team: string, season: string, recentN = 10) {
-    const { start, end } = seasonDateRange(season)
-    const { data: gameRows, error: gErr } = await supabase
-        .from('games')
-        .select('game_id')
-        .gte('game_date', start)
-        .lt('game_date', end)
-        .or(`home_team.eq.${team},away_team.eq.${team}`)
-    if (gErr) { console.error('opp games query', gErr.message, gErr.hint); return null }
-    if (!gameRows?.length) { console.warn('opp games query: no rows'); return null }
-
-    const { data, error } = await supabase
-        .from('player_games')
-        .select(POS_SELECT)
-        .in('game_id', gameRows.map((g) => g.game_id))
-        .neq('team', team)
-        .gt('min', 0)
-        .range(0, 4999)
-    if (error) { console.error('opp position agg', error.message, error.hint); return null }
-    return aggregatePositions(data ?? [], recentN)
-}
 export function seasonForDate(date: Date): string {
     const year = date.getUTCFullYear()
-    const month = date.getUTCMonth()
-    const startYear = month >= 9 ? year : year - 1
-
-    return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`
+    const startYear = date.getUTCMonth() >= 9 ? year : year - 1
+    return seasonLabel(startYear)
 }
 
 export function seasonDateRange(season: string): { start: string; end: string } {
     const [startYear] = season.split('-')
-    const start = `${startYear}-10-01`
-    const end = `${Number(startYear) + 1}-09-30`
-
-    return { start, end }
+    return { start: `${startYear}-10-01`, end: `${Number(startYear) + 1}-09-30` }
 }
 
+// Supabase returns at most 1000 rows per request, so anything bigger must be paged.
+// `build` must include a deterministic .order() or pages can overlap.
+const PAGE_SIZE = 1000
+export async function fetchAll(build: (from: number, to: number) => PromiseLike<any>): Promise<any[]> {
+    const rows: any[] = []
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await build(from, from + PAGE_SIZE - 1)
+        if (error) throw new Error(error.message)
+        if (!data?.length) break
+        rows.push(...data)
+        if (data.length < PAGE_SIZE) break
+    }
+    return rows
+}
 
+// ───────────────────────── Games (one query per team page) ─────────────────────────
 
-//GET all games for a team through a season
-export async function getTeamSeasonStats(
-    team: string,
-    season: string,
-    asOfDate?: string
-) {
+async function fetchTeamGames(team: string, season: string, asOfDate?: string): Promise<TeamGameRow[]> {
     const { start, end } = seasonDateRange(season)
-    const effectiveEnd = asOfDate && asOfDate < end ? asOfDate : end
     const { data, error } = await supabase
         .from('games')
-        .select("*")
-        .or(`home_team.eq.${team},away_team.eq.${team}`)
+        .select('*')
+        .or(teamFilter(team))
         .gte('game_date', start)
-        .lte('game_date', effectiveEnd)
+        .lte('game_date', asOfDate && asOfDate < end ? asOfDate : end)
         .order('game_date', { ascending: true })
     if (error) {
-        console.error(error)
-        return null
+        console.error('fetchTeamGames', error.message)
+        return []
     }
-    if (!data || data.length === 0) return null
-    return aggregateTeamStats(team, data as TeamGameRow[])
+    return (data ?? []) as TeamGameRow[]
 }
 
-// Given a team and the games they have played, returns the selected team's average and the average stats their opponents get.
-function aggregateTeamStats(team: string, games: TeamGameRow[]) {
-    let wins = 0
-    let losses = 0
-
-    let homeWin = 0
-    let homeLoss = 0
-    let awayWin = 0
-    let awayLoss = 0
-
-    const totals: Record<string, number> = {}
-    const oppTotals: Record<string, number> = {}
-    STAT_COLS.forEach((c) => { totals[c] = 0; oppTotals[c] = 0 })
-
-    for (const g of games) {
+// Turns raw games into one row per game from `team`'s point of view.
+function buildGameLog(team: string, games: TeamGameRow[]): TeamGameLogRow[] {
+    return games.map((g, i) => {
         const isHome = g.home_team === team
-        const won = isHome ? g.home_win === 1 : g.home_win === 0
-        if (won) {
-            wins++
-            if (isHome) homeWin++
-            else awayWin++
+        const own = isHome ? 'home_' : 'away_'
+        const opp = isHome ? 'away_' : 'home_'
+        const row: TeamGameLogRow = {
+            game_id: g.game_id,
+            game_date: g.game_date,
+            opponent: isHome ? g.away_team : g.home_team,
+            is_home: isHome,
+            win: isHome ? g.home_win === 1 : g.home_win === 0,
+            // days OFF between games, not days between game dates
+            restDays: i === 0 ? null : daysBetween(games[i - 1].game_date, g.game_date) - 1,
         }
-        else {
-            losses++
-            if (isHome) homeLoss++
-            else awayLoss++
+        for (const c of STAT_COLS) {
+            row[c] = g[own + c]
+            row[`opp_${c}`] = g[opp + c]
         }
+        return row
+    })
+}
 
-        for (const col of STAT_COLS) {
-            totals[col] += isHome ? g[`home_${col}`] ?? 0 : g[`away_${col}`] ?? 0
-            oppTotals[col] += isHome ? g[`away_${col}`] ?? 0 : g[`home_${col}`] ?? 0
+// Record plus the team's and opponents' per-game averages, derived from the game log.
+function summarizeLog(team: string, log: TeamGameLogRow[]) {
+    if (!log.length) return null
+
+    let homeWin = 0, homeLoss = 0, awayWin = 0, awayLoss = 0
+    const totals = zeroStats()
+    const oppTotals = zeroStats()
+
+    for (const r of log) {
+        if (r.win) r.is_home ? homeWin++ : awayWin++
+        else r.is_home ? homeLoss++ : awayLoss++
+        for (const c of STAT_COLS) {
+            totals[c] += r[c] ?? 0
+            oppTotals[c] += r[`opp_${c}`] ?? 0
         }
     }
-    const n = games.length
-    const averages: Record<string, number> = {}
-    const oppAverages: Record<string, number> = {}
 
-    for (const col of STAT_COLS) {
-        averages[col] = totals[col] / n
-        oppAverages[col] = oppTotals[col] / n
+    const n = log.length
+    const averages = zeroStats()
+    const oppAverages = zeroStats()
+    for (const c of STAT_COLS) {
+        averages[c] = totals[c] / n
+        oppAverages[c] = oppTotals[c] / n
     }
 
     return {
         team,
         gamesPlayed: n,
-        wins,
-        losses,
+        wins: homeWin + awayWin,
+        losses: homeLoss + awayLoss,
         averages,
         oppAverages,
         homeWin,
         homeLoss,
         awayWin,
         awayLoss,
-        lastGameDate: games[games.length - 1].game_date
+        lastGameDate: log[n - 1].game_date,
     }
 }
 
-// get all available seasons
-export async function getAvailableSeasons(team: string): Promise<string[]> {
-    const { data, error } = await supabase
-        .from('games')
-        .select('game_date')
-        .or(`home_team.eq.${team},away_team.eq.${team}`)
-        .order('game_date', { ascending: true })
-    if (error || !data) return []
-    const seasons = new Set(data.map((g) => seasonForDate(new Date(g.game_date))))
-    return Array.from(seasons).sort().reverse()
+// ───────────────────────── Player rows (one paged query per team page) ─────────────────────────
+
+const PLAYER_COLS = ['game_id', 'player_id', 'player_name', 'team', 'position', 'min', ...STAT_COLS].join(', ')
+
+// Every player row (both teams) for the given games, DNPs removed.
+// Splitting into "team" vs "opponents" happens in JS, so one query serves
+// the share table, the team position table, and the opponent position table.
+async function fetchPlayerRows(games: TeamGameRow[]): Promise<PlayerGameRow[]> {
+    if (!games.length) return []
+    const dateById = new Map(games.map((g) => [String(g.game_id), g.game_date]))
+    const ids = [...dateById.keys()]
+
+    const rows = await fetchAll((from, to) =>
+        supabase
+            .from('player_games')
+            .select(PLAYER_COLS)
+            .in('game_id', ids)
+            .order('game_id', { ascending: true })
+            .order('player_id', { ascending: true })
+            .range(from, to)
+    )
+
+    return rows
+        .map((r) => ({ ...r, game_id: String(r.game_id), game_date: dateById.get(String(r.game_id))! }) as PlayerGameRow)
+        .filter(isPlayed)
+}
+
+// ───────────────────────── Player stat shares ─────────────────────────
+
+const SHARE_ACCUM = ['min', ...SHARE_STATS, 'fga', 'fta']
+
+function computeStatShare(rows: PlayerGameRow[], teamGames: number) {
+    const zero = () => Object.fromEntries(SHARE_ACCUM.map((k) => [k, 0])) as Record<string, number>
+    const addInto = (target: Record<string, number>, src: Record<string, any>) => {
+        for (const k of SHARE_ACCUM) target[k] += Number(src[k]) || 0
+    }
+
+    // team totals for each game
+    const teamByGame = new Map<string, Record<string, number>>()
+    for (const r of rows) {
+        if (!teamByGame.has(r.game_id)) teamByGame.set(r.game_id, zero())
+        addInto(teamByGame.get(r.game_id)!, r)
+    }
+
+    // each player's totals, and the team's totals in the games he played
+    const byPlayer = new Map<string, { name: string; gp: number; totals: Record<string, number>; teamTotals: Record<string, number> }>()
+    for (const r of rows) {
+        const id = String(r.player_id)
+        if (!byPlayer.has(id)) {
+            byPlayer.set(id, { name: r.player_name ?? id, gp: 0, totals: zero(), teamTotals: zero() })
+        }
+        const p = byPlayer.get(id)!
+        p.gp += 1
+        addInto(p.totals, r)
+        addInto(p.teamTotals, teamByGame.get(r.game_id)!)
+    }
+
+    const share = (part: number, total: number) => (total > 0 ? part / total : 0)
+    const usage = (t: Record<string, number>) => t.fga + 0.44 * t.fta + t.tov
+
+    const players: PlayerStatShare[] = []
+    for (const [playerId, p] of byPlayer) {
+        const shares = { min: share(p.totals.min, p.teamTotals.min) } as Record<ShareKey, number>
+        for (const s of SHARE_STATS) shares[s] = share(p.totals[s], p.teamTotals[s])
+        shares.usg = share(usage(p.totals), usage(p.teamTotals))
+        players.push({ playerId, name: p.name, gp: p.gp, minutes: p.totals.min, shares })
+    }
+    players.sort((a, b) => b.minutes - a.minutes)
+
+    return { players, teamGames, gamesWithBoxScores: teamByGame.size }
+}
+
+// ───────────────────────── Position aggregation ─────────────────────────
+
+type GameAgg = { date: string; pos: Record<PositionGroup, StatRecord> }
+
+const mapStats = (fn: (k: PosStatKey) => number): StatRecord =>
+    Object.fromEntries(STATS.map((k) => [k, fn(k)])) as StatRecord
+
+const emptyByPos = () =>
+    Object.fromEntries(POS_ORDER.map((p) => [p, mapStats(() => 0)])) as Record<PositionGroup, StatRecord>
+
+// Empty-string and unexpected positions count as bench
+const normalizePos = (p: string | null): PositionGroup => {
+    const v = (p ?? '').trim().toUpperCase()
+    return v === 'G' || v === 'F' || v === 'C' ? v : 'BENCH'
+}
+
+function sumGames(list: GameAgg[]) {
+    const out = emptyByPos()
+    for (const g of list)
+        for (const p of POS_ORDER)
+            for (const k of STATS) out[p][k] += g.pos[p][k]
+    return out
+}
+
+function aggregatePositions(rows: PlayerGameRow[], recentN: number): PositionAgg[] | null {
+    if (!rows.length) return null
+
+    const byGame = new Map<string, GameAgg>()
+    for (const r of rows) {
+        if (!byGame.has(r.game_id)) byGame.set(r.game_id, { date: r.game_date, pos: emptyByPos() })
+        const bucket = byGame.get(r.game_id)!.pos[normalizePos(r.position)]
+        for (const k of STATS) bucket[k] += Number(r[k]) || 0
+    }
+
+    const games = [...byGame.values()].sort((a, b) => a.date.localeCompare(b.date))
+    const seasonTot = sumGames(games)
+    const recentTot = sumGames(games.slice(-recentN))
+
+    const shareOf = (tot: typeof seasonTot, pos: PositionGroup) =>
+        mapStats((k) => {
+            const total = POS_ORDER.reduce((t, p) => t + tot[p][k], 0)
+            return total ? tot[pos][k] / total : 0
+        })
+
+    return POS_ORDER.map((pos) => ({
+        pos,
+        avg: mapStats((k) => seasonTot[pos][k] / games.length),
+        share: shareOf(seasonTot, pos),
+        recentShare: shareOf(recentTot, pos),
+    }))
+}
+
+// ───────────────────────── Public API: team page ─────────────────────────
+
+// Everything the Teams page needs, from one games query and one paged player_games query.
+export async function getTeamPageData(team: string, season: string, recentN = 10) {
+    const games = await fetchTeamGames(team, season)
+    const log = buildGameLog(team, games)
+    const stats = summarizeLog(team, log)
+
+    let shares: ReturnType<typeof computeStatShare> | null = null
+    let posAgg: PositionAgg[] | null = null
+    let oppAgg: PositionAgg[] | null = null
+    try {
+        const rows = await fetchPlayerRows(games)
+        const own = rows.filter((r) => r.team === team)
+        shares = computeStatShare(own, games.length)
+        posAgg = aggregatePositions(own, recentN)
+        oppAgg = aggregatePositions(rows.filter((r) => r.team !== team), recentN)
+    } catch (e) {
+        console.error('getTeamPageData: player rows', e)
+    }
+
+    return { stats, log, shares, posAgg, oppAgg }
+}
+
+// Single-purpose wrappers, kept so other pages that import them keep working.
+export async function getTeamSeasonStats(team: string, season: string, asOfDate?: string) {
+    return summarizeLog(team, buildGameLog(team, await fetchTeamGames(team, season, asOfDate)))
 }
 
 export async function getTeamGameLog(team: string, season: string): Promise<TeamGameLogRow[]> {
-    const { start, end } = seasonDateRange(season)
-    const { data, error } = await supabase
-        .from('games')
-        .select("*")
-        .or(`home_team.eq.${team},away_team.eq.${team}`)
-        .gte('game_date', start)
-        .lte('game_date', end)
-        .order('game_date', { ascending: true })
-    if (error) {
-        console.error(error)
-        return []
-    }
-    if (!data) return []
-
-    return data.map((g, i, arr) => {
-        const isHome = g.home_team === team
-        const won = isHome ? g.home_win === 1 : g.home_win === 0
-        let restDays: number | null = null
-        if (i > 0) {
-            const prevDate = new Date(arr[i - 1].game_date)
-            const currDate = new Date(g.game_date)
-            const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / 86400000)
-            restDays = diffDays - 1 // days OFF between games, not days between game dates
-        } else {
-            restDays = null
-        }
-        const row: TeamGameLogRow = {
-            game_id: g.game_id,
-            game_date: g.game_date,
-            opponent: isHome ? g.away_team : g.home_team,
-            is_home: isHome,
-            win: won,
-            restDays
-        }
-        for (const col of STAT_COLS) {
-            row[col] = isHome ? g[`home_${col}`] : g[`away_${col}`]
-            row[`opp_${col}`] = isHome ? g[`away_${col}`] : g[`home_${col}`]
-        }
-        return row
-    })
+    return buildGameLog(team, await fetchTeamGames(team, season))
 }
 
-// Get two teams total stats head to head
+export async function getTeamStatShare(team: string, season: string) {
+    const games = await fetchTeamGames(team, season)
+    const rows = await fetchPlayerRows(games)
+    return computeStatShare(rows.filter((r) => r.team === team), games.length)
+}
+
+// Seasons a team has games in. Two one-row queries (first and last game)
+// instead of downloading every game the team ever played.
+export async function getAvailableSeasons(team: string): Promise<string[]> {
+    const edge = (ascending: boolean) =>
+        supabase.from('games').select('game_date').or(teamFilter(team))
+            .order('game_date', { ascending }).limit(1)
+
+    const [first, last] = await Promise.all([edge(true), edge(false)])
+    const firstDate = first.data?.[0]?.game_date
+    const lastDate = last.data?.[0]?.game_date
+    if (first.error || last.error || !firstDate || !lastDate) return []
+
+    const startYear = (d: string) => parseInt(seasonForDate(new Date(d)).slice(0, 4), 10)
+    const seasons: string[] = []
+    for (let y = startYear(lastDate); y >= startYear(firstDate); y--) seasons.push(seasonLabel(y))
+    return seasons // newest first
+}
+
+// ───────────────────────── Head to head ─────────────────────────
+
 export async function getHeadToHead(teamA: string, teamB: string, season: string) {
     const { start, end } = seasonDateRange(season)
     const { data, error } = await supabase
         .from('games')
-        .select("*")
-        .or(
-            `and(home_team.eq.${teamA},away_team.eq.${teamB}),and(home_team.eq.${teamB},away_team.eq.${teamA})`
-        )
+        .select('*')
+        .or(`and(home_team.eq.${teamA},away_team.eq.${teamB}),and(home_team.eq.${teamB},away_team.eq.${teamA})`)
         .gte('game_date', start)
         .lte('game_date', end)
         .order('game_date', { ascending: false })
@@ -346,192 +414,66 @@ export async function getHeadToHead(teamA: string, teamB: string, season: string
     return data ?? []
 }
 
-// Get two teams players stats for comparison
-export async function getHeadToHeadPlayerStats(
-    teamA: string,
-    teamB: string,
-    season: string
-) {
+export async function getHeadToHeadPlayerStats(teamA: string, teamB: string, season: string) {
     const games = await getHeadToHead(teamA, teamB, season)
     if (games.length === 0) return { games: [], playersA: [], playersB: [] }
 
-    const gameId = games.map((g) => g.game_id)
     const { data, error } = await supabase
         .from('player_games')
-        .select("*")
-        .in('game_id', gameId)
+        .select('*')
+        .in('game_id', games.map((g) => g.game_id))
 
     if (error || !data) {
         console.error('getHeadToHeadPlayerStats error', error)
         return { games, playersA: [], playersB: [] }
     }
-    const byPlayers = new Map<number, { player_name: string; team: string; games: number; totals: Record<string, number> }>()
 
-    for (const row of data) {
-        if (!byPlayers.has(row.player_id)) {
-            byPlayers.set(row.player_id, {
-                player_name: row.player_name,
-                team: row.team,
-                games: 0,
-                totals: Object.fromEntries(STAT_COLS.map((c) => [c, 0]))
-            })
+    const byPlayer = new Map<number, { player_name: string; team: string; games: number; totals: Record<string, number> }>()
+    // DNP rows are skipped, otherwise they would dilute the averages
+    for (const row of data.filter(isPlayed)) {
+        if (!byPlayer.has(row.player_id)) {
+            byPlayer.set(row.player_id, { player_name: row.player_name, team: row.team, games: 0, totals: zeroStats() })
         }
-        const entry = byPlayers.get(row.player_id)!
+        const entry = byPlayer.get(row.player_id)!
         entry.games += 1
-        for (const col of STAT_COLS) {
-            entry.totals[col] += row[col] ?? 0
-        }
+        for (const c of STAT_COLS) entry.totals[c] += row[c] ?? 0
     }
 
-    const allPlayers = Array.from(byPlayers.entries()).map(([player_id, p]) => ({
+    const allPlayers = [...byPlayer.entries()].map(([player_id, p]) => ({
         player_id,
         player_name: p.player_name,
         team: p.team,
         gamesPlayed: p.games,
-        averages: Object.fromEntries(STAT_COLS.map((c) => [c, p.totals[c] / p.games]))
+        averages: Object.fromEntries(STAT_COLS.map((c) => [c, p.totals[c] / p.games])),
     }))
+
+    const byGamesThenPts = (a: (typeof allPlayers)[number], b: (typeof allPlayers)[number]) =>
+        b.gamesPlayed - a.gamesPlayed || b.averages.pts - a.averages.pts
+
     return {
         games,
-        playersA: allPlayers.filter((p) => p.team === teamA).sort((a, b) => {
-            if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed
-            return b.averages.pts - a.averages.pts
-        }),
-        playersB: allPlayers.filter((p) => p.team === teamB).sort((a, b) => {
-            if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed
-            return b.averages.pts - a.averages.pts
-        })
-
+        playersA: allPlayers.filter((p) => p.team === teamA).sort(byGamesThenPts),
+        playersB: allPlayers.filter((p) => p.team === teamB).sort(byGamesThenPts),
     }
 }
-export async function getTeamStatShare(team: string, season: string) {
-    const { start, end } = seasonDateRange(season)
-    const { data: game_data, error: game_error } = await supabase
-        .from('games')
-        .select("game_id")
-        .or(`home_team.eq.${team},away_team.eq.${team}`)
-        .gte('game_date', start)
-        .lte('game_date', end)
 
-    if (game_error) throw new Error(`getTeamStatShare games: ${game_error.message}`)
-
-    const gameIds = (game_data ?? []).map((g) => String(g.game_id))
-    if (gameIds.length === 0) return { players: [] as PlayerStatShare[], teamGames: 0, gamesWithBoxScores: 0 }
-
-    const PAGE = 1000
-    const playerRows: any[] = []
-    for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-            .from('player_games')
-            .select("*")
-            .in('game_id', gameIds)
-            .eq('team', team)
-            .order('game_id', { ascending: true })
-            .order('player_id', { ascending: true })
-            .range(from, from + PAGE - 1)
-        if (error) throw new Error(`getTeamStatShare player_games: ${error.message}`)
-        if (!data || data.length === 0) break
-        playerRows.push(...data)
-        if (data.length < PAGE) break
-    }
-
-    const playedRows = playerRows.filter((r) => r.min !== null && r.min !== undefined)
-    const ACCUM = [...SHARE_STATS, 'fga', 'fta']
-    const zero = () => {
-        const t: Record<string, number> = { min: 0 }
-        for (const stat of ACCUM) t[stat] = 0
-        return t
-    }
-
-
-    const teamByGame = new Map<string, Record<string, number>>()
-    for (const row of playedRows) {
-        const gid = String(row.game_id)
-        if (!teamByGame.has(gid)) teamByGame.set(gid, zero())
-        const t = teamByGame.get(gid)!
-        t.min += Number(row.min) || 0
-        for (const stat of ACCUM) t[stat] += Number(row[stat]) || 0
-    }
-
-    const byPlayers = new Map<string, {
-        name: string
-        gp: number
-        minutes: number
-        totals: Record<string, number>
-        teamTotals: Record<string, number>
-    }>()
-    const gamesSeen = new Set<string>()
-
-    for (const row of playedRows) {
-        const gid = String(row.game_id)
-        const id = String(row.player_id)
-        const minutes = Number(row.min) || 0
-        gamesSeen.add(gid)
-
-        if (!byPlayers.has(id)) {
-            byPlayers.set(id, {
-                name: row.player_name ?? id,
-                gp: 0,
-                minutes: 0,
-                totals: zero(),
-                teamTotals: zero(),
-            })
-        }
-        const entry = byPlayers.get(id)!
-        const teamGame = teamByGame.get(gid)!
-        entry.gp += 1
-        entry.minutes += minutes
-        entry.teamTotals.min += teamGame.min
-
-        for (const stat of ACCUM) {
-            entry.totals[stat] += Number(row[stat]) || 0
-            entry.teamTotals[stat] += teamGame[stat]
-        }
-    }
-
-    const usage = (fga: number, fta: number, tov: number) => fga + 0.44 * fta + tov
-    const share = (part: number, total: number) => (total > 0 ? part / total : 0)
-
-    const players: PlayerStatShare[] = []
-    for (const [playerId, p] of byPlayers) {
-        const shares = {} as Record<ShareKey, number>
-        shares.min = share(p.minutes, p.teamTotals.min)
-        for (const stat of SHARE_STATS) {
-            shares[stat] = share(p.totals[stat], p.teamTotals[stat])
-        }
-        shares.usg = share(
-            usage(p.totals.fga, p.totals.fta, p.totals.tov),
-            usage(p.teamTotals.fga, p.teamTotals.fta, p.teamTotals.tov)
-        )
-        players.push({ playerId, name: p.name, gp: p.gp, minutes: p.minutes, shares })
-    }
-    players.sort((a, b) => b.minutes - a.minutes)
-    return { players, teamGames: gameIds.length, gamesWithBoxScores: gamesSeen.size }
-
-}
+// ───────────────────────── Standings ─────────────────────────
 
 export async function getStandings(season: string) {
     const { start, end } = seasonDateRange(season)
 
-    const PAGE = 1000
-    const games: any[] = []
-    for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
+    const games = await fetchAll((from, to) =>
+        supabase
             .from('games')
             .select('game_id, game_date, home_team, away_team, home_win')
             .gte('game_date', start)
             .lte('game_date', end)
             .order('game_date', { ascending: true })
             .order('game_id', { ascending: true })
-            .range(from, from + PAGE - 1)
-        if (error) {
-            console.error(`getStandings ${error}`)
-        }
-        if (!data || data.length === 0) break
-        games.push(...data)
-        if (data.length < PAGE) break
-    }
+            .range(from, to)
+    )
 
-    const records = new Map<string, { wins: number, loss: number, results: boolean[] }>()
+    const records = new Map<string, { wins: number; loss: number; results: boolean[] }>()
     for (const team of Object.keys(TEAM_CONFERENCE)) {
         records.set(team, { wins: 0, loss: 0, results: [] })
     }
@@ -544,6 +486,7 @@ export async function getStandings(season: string) {
         home.results.push(homeWon)
         away.results.push(!homeWon)
     }
+
     const rows: StandingRow[] = []
     for (const [team, r] of records) {
         const gp = r.wins + r.loss
@@ -559,6 +502,7 @@ export async function getStandings(season: string) {
             last10: last10.length ? `${l10Wins}-${last10.length - l10Wins}` : '-',
         })
     }
+
     const rank = (list: StandingRow[]): StandingRow[] => {
         const sorted = [...list].sort(
             (a, b) => b.pct - a.pct || b.wins - a.wins || a.team.localeCompare(b.team)

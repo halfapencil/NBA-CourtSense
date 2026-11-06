@@ -1,31 +1,45 @@
 import { supabase } from "./supabase";
-import { seasonDateRange, STAT_COLS } from "./teamStats";
+import { seasonDateRange, STAT_COLS, fetchAll } from "./teamStats";
 
 export type RosterPlayer = { player_id: number; player_name: string }
 
-export async function getTeamRoster(team: string, season: string): Promise<RosterPlayer[]> {
+// player_games rows for one season. The date filter goes through the games join,
+// so callers never need to look up game ids first.
+function seasonPlayerGames(columns: string, season: string) {
     const { start, end } = seasonDateRange(season)
-
-    const { data, error } = await supabase
+    return supabase
         .from('player_games')
-        .select('player_id, player_name, games!inner(game_date)')
-        .eq('team', team)
+        .select(`${columns}, games!inner(game_date)`)
         .gte('games.game_date', start)
         .lte('games.game_date', end)
+}
 
-    if (error || !data) {
-        console.log(error)
+export async function getTeamRoster(team: string, season: string): Promise<RosterPlayer[]> {
+    try {
+        // A team-season has over 1000 player rows, so this must be paged.
+        // (player_id, game_id) is unique, which keeps page boundaries stable.
+        const rows = await fetchAll((from, to) =>
+            seasonPlayerGames('player_id, player_name', season)
+                .eq('team', team)
+                .order('player_id', { ascending: true })
+                .order('game_id', { ascending: true })
+                .range(from, to)
+        )
+
+        const names = new Map<number, string>()
+        for (const r of rows) {
+            if (!names.has(r.player_id)) names.set(r.player_id, r.player_name)
+        }
+
+        return [...names].map(([player_id, player_name]) => ({ player_id, player_name }))
+            .sort((a, b) => (a.player_name ?? '').localeCompare(b.player_name ?? ''))
+    } catch (e) {
+        console.error('getTeamRoster', e)
         return []
     }
-    const seen = new Map<number, string>()
-    for (const row of data as any[]) {
-        if (!seen.has(row.player_id)) seen.set(row.player_id, row.player_name)
-    }
-
-    return Array.from(seen.entries())
-        .map(([player_id, player_name]) => ({ player_id, player_name }))
-        .sort((a, b) => a.player_name.localeCompare(b.player_name))
 }
+
+// ───────────────────────── Statistics ─────────────────────────
 
 function stddev(values: number[], mean: number): number {
     if (values.length < 2) return 0
@@ -33,59 +47,46 @@ function stddev(values: number[], mean: number): number {
     return Math.sqrt(variance)
 }
 
+function meanStd(values: number[]) {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length
+    return { mean, std: stddev(values, mean) }
+}
+
+const CORE_STATS = ['pts', 'reb', 'ast'] as const
+
 export async function getPlayerSeasonStats(playerId: number, season: string, threshold = 1.5) {
-    const { start, end } = seasonDateRange(season)
-
-    const { data, error } = await supabase
-        .from("games")
-        .select("*")
-        .gte("game_date", start)
-        .lte("game_date", end)
-
-    if (error || !data || data.length === 0) {
-        if (error) console.error('getPlayerSeasonStats', error)
-        return null
-    }
-    const gameIds = data.map((g) => g.game_id)
-
-    const { data: player_data, error: player_error } = await supabase
-        .from('player_games')
-        .select("*")
+    const { data, error } = await seasonPlayerGames(STAT_COLS.join(', '), season)
         .eq('player_id', playerId)
-        .in('game_id', gameIds)
-    if (player_error || !player_data || player_data.length === 0) {
-        console.error("Player error", player_error)
-        return (null)
-    }
-    const stddevs: Record<string, number> = {}
-    const n = player_data.length
+        .gt('min', 0)
+
+    if (error) console.error('getPlayerSeasonStats', error)
+    if (error || !data?.length) return null
+
+    const rows = data as any[]
+    const n = rows.length
+
     const averages: Record<string, number> = {}
-
+    const stddevs: Record<string, number> = {}
     for (const col of STAT_COLS) {
-        const values = player_data.map((row: any) => row[col] ?? 0)
-        const mean = values.reduce((a, b) => a + b, 0) / n
+        const { mean, std } = meanStd(rows.map((r) => r[col] ?? 0))
         averages[col] = mean
-        stddevs[col] = stddev(values, mean)
+        stddevs[col] = std
     }
 
-    const praValues = player_data.map((row: any) => (row.pts ?? 0) + (row.reb ?? 0) + (row.ast ?? 0))
-    const praMean = praValues.reduce((a, b) => a + b, 0) / n
-    const praStd = stddev(praValues, praMean)
+    const pra = rows.map((r) => (r.pts ?? 0) + (r.reb ?? 0) + (r.ast ?? 0))
+    const { mean: praMean, std: praStd } = meanStd(pra)
 
+    // A game is an outlier if it is `threshold` standard deviations from the mean
+    const isHigh = (v: number, mean: number, std: number) => std > 0 && v >= mean + threshold * std
+    const isLow = (v: number, mean: number, std: number) => std > 0 && v <= mean - threshold * std
 
-    const coreStats = ['pts', 'reb', 'ast']
     let exceptionalGames = 0
     let poorGames = 0
-
-    player_data.forEach((row: any) => {
-        const isExceptional = coreStats.some((col) => stddevs[col] > 0 && row[col] >= averages[col] + threshold * stddevs[col])
-        const isPoor = coreStats.some((col) => stddevs[col] > 0 && row[col] <= averages[col] - threshold * stddevs[col])
-
-        if (isExceptional) exceptionalGames++
-        if (isPoor) poorGames++
-    })
-
-    const highPraGames = praValues.filter((v) => praStd > 0 && v >= praMean + threshold * praStd).length
+    for (const row of rows) {
+        if (CORE_STATS.some((c) => isHigh(row[c] ?? 0, averages[c], stddevs[c]))) exceptionalGames++
+        if (CORE_STATS.some((c) => isLow(row[c] ?? 0, averages[c], stddevs[c]))) poorGames++
+    }
+    const highPraGames = pra.filter((v) => isHigh(v, praMean, praStd)).length
 
     return { playerId, gamesPlayed: n, averages, stddevs, praMean, praStd, exceptionalGames, poorGames, highPraGames }
 }
