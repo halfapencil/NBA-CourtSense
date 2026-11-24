@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { distanceMiles, isCanadian } from "./teamLocations"
 
 // ───────────────────────── Constants ─────────────────────────
 
@@ -101,7 +102,7 @@ const isPlayed = (r: { min?: unknown }) => Number(r.min) > 0
 
 const zeroStats = () => Object.fromEntries(STAT_COLS.map((c) => [c, 0])) as Record<string, number>
 
-const daysBetween = (a: string, b: string) =>
+export const daysBetween = (a: string, b: string) =>
     Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
 
 const seasonLabel = (startYear: number) =>
@@ -157,6 +158,11 @@ function buildGameLog(team: string, games: TeamGameRow[]): TeamGameLogRow[] {
         const isHome = g.home_team === team
         const own = isHome ? 'home_' : 'away_'
         const opp = isHome ? 'away_' : 'home_'
+
+        // each game is assumed to be played in the home team's arena
+        const prevVenue = i === 0 ? null : games[i - 1].home_team
+        const venue = g.home_team
+
         const row: TeamGameLogRow = {
             game_id: g.game_id,
             game_date: g.game_date,
@@ -165,6 +171,8 @@ function buildGameLog(team: string, games: TeamGameRow[]): TeamGameLogRow[] {
             win: isHome ? g.home_win === 1 : g.home_win === 0,
             // days OFF between games, not days between game dates
             restDays: i === 0 ? null : daysBetween(games[i - 1].game_date, g.game_date) - 1,
+            travelMiles: prevVenue ? distanceMiles(prevVenue, venue) : null,
+            crossedBorder: prevVenue !== null && isCanadian(prevVenue) !== isCanadian(venue),
         }
         for (const c of STAT_COLS) {
             row[c] = g[own + c]
@@ -173,12 +181,12 @@ function buildGameLog(team: string, games: TeamGameRow[]): TeamGameLogRow[] {
         return row
     })
 }
-
 // Record plus the team's and opponents' per-game averages, derived from the game log.
 function summarizeLog(team: string, log: TeamGameLogRow[]) {
     if (!log.length) return null
 
     let homeWin = 0, homeLoss = 0, awayWin = 0, awayLoss = 0
+    let totalTravel = 0, tripCount = 0
     const totals = zeroStats()
     const oppTotals = zeroStats()
 
@@ -188,6 +196,10 @@ function summarizeLog(team: string, log: TeamGameLogRow[]) {
         for (const c of STAT_COLS) {
             totals[c] += r[c] ?? 0
             oppTotals[c] += r[`opp_${c}`] ?? 0
+        }
+        if (r.travelMiles != null) {
+            totalTravel += r.travelMiles
+            tripCount++
         }
     }
 
@@ -210,6 +222,8 @@ function summarizeLog(team: string, log: TeamGameLogRow[]) {
         homeLoss,
         awayWin,
         awayLoss,
+        totalTravel,
+        avgTravel: tripCount ? totalTravel / tripCount : null,
         lastGameDate: log[n - 1].game_date,
     }
 }

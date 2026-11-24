@@ -2,8 +2,12 @@ import { supabase } from '@/lib/supabase';
 import { StatCard } from '@/components/StatCard';
 import { getStandings, seasonForDate } from '@/lib/teamStats';
 import Standings from '@/components/Standings';
+import { getTravelContext } from '@/lib/travelContext';
+import TravelLine from '@/components/TravelLine';
+import type { TeamTravel } from '@/lib/travelContext';
 
 export const dynamic = 'force-dynamic'
+
 type Prediction = {
   game_date: string
   home_team: string
@@ -12,6 +16,7 @@ type Prediction = {
   implied_spread: number
   model_spread: number
 }
+
 
 async function getTodaysPredictions(): Promise<Prediction[]> {
 
@@ -57,6 +62,7 @@ async function loadStandings(date: string) {
 export default async function Home() {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
   const [predictions, stats, standings] = await Promise.all([getTodaysPredictions(), getModelStats(), loadStandings(date)])
+  const travel = await getTravelContext(date, predictions)
   return (
     <div>
       <h1 className='text-2xl font-semibold mb-6'>Overview</h1>
@@ -79,7 +85,7 @@ export default async function Home() {
           ) : (
             <div className='space-y-3'>
               {predictions.map((game) => (
-                <GameCard key={`${game.home_team}-${game.away_team}`} game={game} />
+                <GameCard key={`${game.home_team}-${game.away_team}`} game={game} homeTravel={travel[game.home_team]} awayTravel={travel[game.away_team]} />
               ))}
             </div>
           )}
@@ -94,7 +100,11 @@ export default async function Home() {
     </div>
   )
 }
-function GameCard({ game }: { game: Prediction }) {
+function GameCard({ game, homeTravel, awayTravel }: {
+  game: Prediction
+  homeTravel?: TeamTravel
+  awayTravel?: TeamTravel
+}) {
   const home_pct = Math.round(game.home_win_prob * 100)
   const away_pct = 100 - home_pct
 
@@ -108,10 +118,16 @@ function GameCard({ game }: { game: Prediction }) {
     : `${game.away_team} - ${Math.abs(game.model_spread)}`
 
   return (
-    <div className='bg-[#1A1F2B] border border-[#2A3040] rounded-lg px-5 py-4 flex items-center justify-bewteen'>
-      <TeamLine team={game.away_team} pct={away_pct} />
-      <span className='Text-[8B93A6] text-sm px-3'></span>
-      <TeamLine team={game.home_team} pct={home_pct} />
+    <div className='bg-[#1A1F2B] border border-[#2A3040] rounded-lg px-5 py-4 flex items-center justify-between'>
+      <div className='flex-1'>
+        <TeamLine team={game.away_team} pct={away_pct} />
+        <TravelLine travel={awayTravel} />
+      </div>
+      <span className='text-[#8B93A6] text-sm px-3'></span>
+      <div className='flex-1'>
+        <TeamLine team={game.home_team} pct={home_pct} />
+        <TravelLine travel={homeTravel} />
+      </div>
       <div className='flex flex-col gap-1'>
         <span className='text-sm text-[#8B93A6]'> Implicit spread:  {spreadLabel}</span>
         <span className='text-sm text-[#8B93A6]'> Model spread:  {modelSpreadLabel}</span>
