@@ -393,11 +393,13 @@ export async function getTeamStatShare(team: string, season: string) {
 
 // Seasons a team has games in. Two one-row queries (first and last game)
 // instead of downloading every game the team ever played.
-export async function getAvailableSeasons(team: string): Promise<string[]> {
-    const edge = (ascending: boolean) =>
-        supabase.from('games').select('game_date').or(teamFilter(team))
+export async function getAvailableSeasons(team?: string): Promise<string[]> {
+    const edge = (ascending: boolean) => {
+        const q = supabase.from('games').select('game_date')
+        return (team ? q.or(teamFilter(team)) : q)
             .order('game_date', { ascending }).limit(1)
-
+    }
+    
     const [first, last] = await Promise.all([edge(true), edge(false)])
     const firstDate = first.data?.[0]?.game_date
     const lastDate = last.data?.[0]?.game_date
